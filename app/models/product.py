@@ -1,43 +1,38 @@
-import uuid
 import enum
- 
-from sqlalchemy import Column, String, Text, JSON, Numeric, Enum as SAEnum, ForeignKey
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, Column, DateTime, Enum as SAEnum, JSON, String, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
- 
+
 from app.database import Base
- 
- 
+
+
 class ProductStatus(str, enum.Enum):
     CREATED = "CREATED"
     ON_MODERATION = "ON_MODERATION"   # первый SKU добавлен → уходит на модерацию
     PUBLISHED = "PUBLISHED"
     REJECTED = "REJECTED"
-    HARD_BLOCKED = "HARD_BLOCKED"     # заблокирован — SKU добавлять нельзя
- 
- 
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class Product(Base):
     __tablename__ = "products"
  
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     seller_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     title = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     category_id = Column(UUID(as_uuid=True), nullable=False)
-    attributes = Column(JSON, nullable=False, default=dict)
-    images = Column(JSON, nullable=False)   # list of URLs
+    characteristics = Column(JSON, nullable=False, default=list)
+    images = Column(JSON, nullable=False)
     status = Column(SAEnum(ProductStatus), nullable=False, default=ProductStatus.CREATED)
- 
-    skus = relationship("SKU", back_populates="product", lazy="selectin")
- 
- 
-class SKU(Base):
-    __tablename__ = "skus"
- 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    product_id = Column(UUID(as_uuid=True), ForeignKey("products.id"), nullable=False, index=True)
-    price = Column(Numeric(12, 2), nullable=False)
-    images = Column(JSON, nullable=False)   # list of URLs, минимум 1
-    attributes = Column(JSON, nullable=False, default=dict)  # размер, цвет и т.п.
- 
-    product = relationship("Product", back_populates="skus")
+    deleted = Column(Boolean, nullable=False, default=False)
+    blocking_reason_id = Column(UUID(as_uuid=True), nullable=True)
+    moderator_comment = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
