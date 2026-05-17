@@ -3,28 +3,24 @@
 
 ADR (выбор способа доставки события):
   Рассматривались три варианта:
-  1. Синхронный HTTP POST в обработчике — просто, но если Moderation
-     недоступна, весь запрос падает с 5xx и SKU не сохраняется (либо
-     нужна ручная компенсация).
-  2. Outbox-pattern — надёжно (событие сохраняется в БД вместе со SKU
-     в одной транзакции, отдельный воркер доставляет его), но требует
-     дополнительной инфраструктуры: таблица outbox + фоновый процесс.
-  3. Fire-and-forget (asyncio.create_task) — SKU сохраняется в любом
-     случае; если Moderation недоступна — событие теряется без retry.
+  1. Синхронный HTTP POST в обработчике — прост, но если Moderation
+     недоступна, весь запрос падает с 5xx и SKU не сохраняется.
+  2. Outbox-pattern — надёжно (событие и SKU в одной транзакции),
+     но требует outbox-таблицы и фонового воркера.
+  3. Fire-and-forget (asyncio.create_task) — SKU сохраняется всегда;
+     при недоступности Moderation событие теряется без retry.
 
   Выбор: fire-and-forget для первой итерации.
   Критерии:
-  - Сложность реализации: минимальная — не нужны outbox-таблица и воркер.
-  - Устойчивость к недоступности Moderation: SKU всегда сохраняется;
-    потеря события допустима на этапе MVP, потому что модератор может
-    вручную переотправить или перезапустить сканирование товаров.
-  В следующей итерации можно перейти на outbox без изменения контракта.
+  - Сложность: нулевая дополнительная инфраструктура.
+  - Устойчивость: SKU гарантированно создаётся; потеря события
+    допустима на MVP (модератор может перезапустить сканирование).
+  Следующая итерация — outbox без изменения контракта.
 """
 
 import asyncio
 import logging
 import uuid
-from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -33,13 +29,16 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Путь согласно neomarket-moderation.yaml (IncomingB2BEvent endpoint)
+_MODERATION_EVENTS_PATH = "/api/v1/b2b/events"
+
 
 async def _send(payload: dict[str, Any]) -> None:
-    """Внутренняя корутина — вызывается через create_task."""
+    """Внутренняя корутина — вызывается через create_task (fire-and-forget)."""
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(
-                settings.MODERATION_URL + "/api/v1/events",
+                settings.MODERATION_URL + _MODERATION_EVENTS_PATH,
                 json=payload,
                 headers={
                     "X-Service-Key": settings.MODERATION_SERVICE_KEY,
@@ -47,9 +46,8 @@ async def _send(payload: dict[str, Any]) -> None:
                 },
             )
             resp.raise_for_status()
-            logger.info("moderation event sent: %s", payload.get("idempotency_key"))
+            logger.info("moderation event sent idempotency_key=%s", payload.get("idempotency_key"))
     except Exception as exc:
-        # Логируем, но не роняем запрос — fire-and-forget
         logger.error("failed to send moderation event: %s", exc)
 
 
@@ -59,27 +57,29 @@ def emit_product_created(
     seller_id: uuid.UUID,
     category_id: uuid.UUID,
     title: str,
-    images: list[str],
     sku_id: uuid.UUID,
-    price: Decimal,
+    price: int,
 ) -> None:
     """
-    Отправляет событие CREATED в Moderation асинхронно (fire-and-forget).
-    Idempotency-key = product_id, чтобы повторный вызов не дублировал запись.
+    Отправляет событие CREATED в Moderation (fire-and-forget).
+
+    Структура тела соответствует схеме IncomingB2BEvent (neomarket-moderation.yaml:478-497):
+      - event_type: "CREATED"
+      - idempotency_key: str(product_id) — повторный вызов идемпотентен
+      - product_id, seller_id, category_id, title — атрибуты товара
+      - sku_id, price — первый SKU, инициировавший переход в ON_MODERATION
+
+    Примечание: product_id=None vs seller_id=None — оба случая объединены
+    в 404, чтобы не раскрывать чужие product_id (IDOR-защита).
     """
     payload = {
-        "event": "CREATED",
+        "event_type": "CREATED",
         "idempotency_key": str(product_id),
-        "product": {
-            "id": str(product_id),
-            "seller_id": str(seller_id),
-            "category_id": str(category_id),
-            "title": title,
-            "images": images,
-        },
-        "sku": {
-            "id": str(sku_id),
-            "price": str(price),
-        },
+        "product_id": str(product_id),
+        "seller_id": str(seller_id),
+        "category_id": str(category_id),
+        "title": title,
+        "sku_id": str(sku_id),
+        "price": price,
     }
     asyncio.create_task(_send(payload))
