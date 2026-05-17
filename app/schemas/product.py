@@ -40,10 +40,6 @@ class ProductCreate(BaseModel):
         return v
 
 
-class SKUResponse(BaseModel):
-    pass  # SKU — ответственность US-B2B-02, здесь пустой список
-
-
 class ProductResponse(BaseModel):
     id: uuid.UUID
     seller_id: uuid.UUID

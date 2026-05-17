@@ -10,7 +10,7 @@ from app.database import Base
 
 class ProductStatus(str, enum.Enum):
     CREATED = "CREATED"
-    PENDING_MODERATION = "PENDING_MODERATION"
+    ON_MODERATION = "ON_MODERATION"   # первый SKU добавлен → уходит на модерацию
     PUBLISHED = "PUBLISHED"
     REJECTED = "REJECTED"
 
@@ -21,7 +21,7 @@ def _utcnow() -> datetime:
 
 class Product(Base):
     __tablename__ = "products"
-
+ 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     seller_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     title = Column(String(255), nullable=False)
