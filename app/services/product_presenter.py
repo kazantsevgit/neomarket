@@ -1,0 +1,121 @@
+from __future__ import annotations
+
+import uuid
+from typing import Any
+
+from app.models.product import Product, SKU
+from app.schemas.product import (
+    BlockingReasonDetail,
+    CharacteristicResponse,
+    FieldReportResponse,
+    ProductImageResponse,
+    ProductPublicResponse,
+    ProductResponse,
+    SKUPublicResponse,
+    SKUImageResponse,
+    SKUResponse,
+)
+
+
+def _characteristics_from_json(items: list[dict[str, Any]]) -> list[CharacteristicResponse]:
+    return [CharacteristicResponse.model_validate(item) for item in items]
+
+
+def _blocking_reason_from_product(product: Product) -> BlockingReasonDetail | None:
+    if product.blocking_reason:
+        return BlockingReasonDetail.model_validate(product.blocking_reason)
+    if product.blocking_reason_id is not None:
+        return BlockingReasonDetail(
+            id=product.blocking_reason_id,
+            title=product.moderator_comment or "",
+            comment=product.moderator_comment,
+        )
+    return None
+
+
+def _field_reports_from_product(product: Product) -> list[FieldReportResponse]:
+    return [FieldReportResponse.model_validate(r) for r in (product.field_reports or [])]
+
+
+def _sku_characteristics(sku: SKU) -> list[CharacteristicResponse]:
+    return [
+        CharacteristicResponse(id=ch.id, name=ch.name, value=ch.value)
+        for ch in sku.characteristics_rel
+    ]
+
+
+def _sku_images(sku: SKU) -> list[SKUImageResponse]:
+    return [SKUImageResponse.model_validate(img) for img in sku.images_rel]
+
+
+def sku_to_seller_response(sku: SKU) -> SKUResponse:
+    return SKUResponse(
+        id=sku.id,
+        product_id=sku.product_id,
+        name=sku.name,
+        price=sku.price,
+        discount=sku.discount,
+        cost_price=sku.cost_price,
+        stock_quantity=sku.stock_quantity,
+        active_quantity=sku.active_quantity,
+        reserved_quantity=sku.reserved_quantity,
+        article=sku.article,
+        images=_sku_images(sku),
+        characteristics=_sku_characteristics(sku),
+        created_at=sku.created_at,
+        updated_at=sku.updated_at,
+    )
+
+
+def sku_to_public_response(sku: SKU) -> SKUPublicResponse:
+    return SKUPublicResponse(
+        id=sku.id,
+        product_id=sku.product_id,
+        name=sku.name,
+        price=sku.price,
+        discount=sku.discount,
+        stock_quantity=sku.stock_quantity,
+        active_quantity=sku.active_quantity,
+        article=sku.article,
+        images=_sku_images(sku),
+        characteristics=_sku_characteristics(sku),
+    )
+
+
+def product_to_seller_response(product: Product) -> ProductResponse:
+    return ProductResponse(
+        id=product.id,
+        seller_id=product.seller_id,
+        title=product.title,
+        slug=product.slug,
+        description=product.description,
+        category_id=product.category_id,
+        status=product.status.value,
+        deleted=product.deleted,
+        blocking_reason_id=product.blocking_reason_id,
+        moderator_comment=product.moderator_comment,
+        images=[ProductImageResponse.model_validate(img) for img in product.images],
+        characteristics=_characteristics_from_json(product.characteristics),
+        skus=[sku_to_seller_response(sku) for sku in product.skus],
+        blocking_reason=_blocking_reason_from_product(product),
+        field_reports=_field_reports_from_product(product),
+        created_at=product.created_at,
+        updated_at=product.updated_at,
+    )
+
+
+def product_to_public_response(product: Product) -> ProductPublicResponse:
+    return ProductPublicResponse(
+        id=product.id,
+        seller_id=product.seller_id,
+        title=product.title,
+        slug=product.slug,
+        description=product.description,
+        category_id=product.category_id,
+        status=product.status.value,
+        images=[ProductImageResponse.model_validate(img) for img in product.images],
+        characteristics=_characteristics_from_json(product.characteristics),
+        skus=[sku_to_public_response(sku) for sku in product.skus],
+        created_at=product.created_at,
+        updated_at=product.updated_at,
+    )

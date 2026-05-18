@@ -40,7 +40,9 @@ class Product(Base):
     status             = Column(SAEnum(ProductStatus), nullable=False, default=ProductStatus.CREATED)
     deleted            = Column(Boolean, nullable=False, default=False)
     blocking_reason_id = Column(UUID(as_uuid=True), nullable=True)
+    blocking_reason    = Column(JSON, nullable=True)
     moderator_comment  = Column(String, nullable=True)
+    field_reports      = Column(JSON, nullable=False, default=list)
     created_at         = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at         = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
