@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     # Moderation service
     MODERATION_URL: str = "http://moderation-service:8000"
     MODERATION_SERVICE_KEY: str = "dev-service-key"
+    B2B_SERVICE_KEY: str = "dev-b2b-service-key"
 
     class Config:
         env_file = ".env"

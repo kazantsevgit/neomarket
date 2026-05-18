@@ -27,6 +27,18 @@ class CharacteristicResponse(Characteristic):
     id: uuid.UUID
 
 
+class BlockingReasonDetail(BaseModel):
+    id: uuid.UUID
+    title: str
+    comment: Optional[str] = None
+
+
+class FieldReportResponse(BaseModel):
+    field_name: str
+    sku_id: Optional[uuid.UUID] = None
+    comment: str
+
+
 # ── SKU ──────────────────────────────────────────────────────────────────────
 
 class SKUImageCreate(BaseModel):
@@ -73,6 +85,22 @@ class SKUResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SKUPublicResponse(BaseModel):
+    """Витринный SKU — без cost_price и reserved_quantity (neomarket-b2b.yaml)."""
+    id: uuid.UUID
+    product_id: uuid.UUID
+    name: str
+    price: int
+    discount: int
+    stock_quantity: int
+    active_quantity: int
+    article: Optional[str] = None
+    images: List[SKUImageResponse]
+    characteristics: List[CharacteristicResponse]
+
+    model_config = {"from_attributes": True}
+
+
 # ── Product ───────────────────────────────────────────────────────────────────
 
 class ProductCreate(BaseModel):
@@ -104,6 +132,26 @@ class ProductResponse(BaseModel):
     images: List[ProductImageResponse]
     characteristics: List[CharacteristicResponse]
     skus: List[SKUResponse] = []
+    blocking_reason: Optional[BlockingReasonDetail] = None
+    field_reports: List[FieldReportResponse] = []
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ProductPublicResponse(BaseModel):
+    """Межсервисный / B2C view — без seller-only полей у SKU."""
+    id: uuid.UUID
+    seller_id: uuid.UUID
+    title: str
+    slug: str
+    description: Optional[str]
+    category_id: uuid.UUID
+    status: str
+    images: List[ProductImageResponse]
+    characteristics: List[CharacteristicResponse]
+    skus: List[SKUPublicResponse] = []
     created_at: datetime
     updated_at: datetime
 

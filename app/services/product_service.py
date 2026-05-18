@@ -6,9 +6,10 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.category import Category
-from app.models.product import Product, ProductStatus
+from app.models.product import Product, ProductStatus, SKU
 from app.schemas.product import ProductCreate, ProductImageCreate
 
 
@@ -57,11 +58,40 @@ async def create_product(
         status=ProductStatus.CREATED,
         deleted=False,
         blocking_reason_id=None,
+        blocking_reason=None,
         moderator_comment=None,
+        field_reports=[],
         created_at=now,
         updated_at=now,
     )
     db.add(product)
     await db.commit()
     await db.refresh(product)
+    return product
+
+
+_PRODUCT_LOAD_OPTIONS = [
+    selectinload(Product.skus).selectinload(SKU.images_rel),
+    selectinload(Product.skus).selectinload(SKU.characteristics_rel),
+]
+
+
+async def get_product(
+    db: AsyncSession,
+    product_id: uuid.UUID,
+    *,
+    seller_id: uuid.UUID | None = None,
+) -> Product:
+    """Загрузка карточки. seller_id задан — IDOR: чужой товар → 404."""
+    product = await db.get(Product, product_id, options=_PRODUCT_LOAD_OPTIONS)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found",
+        )
+    if seller_id is not None and product.seller_id != seller_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found",
+        )
     return product
