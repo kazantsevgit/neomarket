@@ -2,20 +2,23 @@ openapi: 3.0.3
 info:
   title: NeoMarket B2B Service — Unified Schema
   version: 1.0.0
-  description: |
+  description: >-
     Единая схема B2B-сервиса NeoMarket, собранная из наработок команд
     «A», «fukhen-dukhen», «Без Диких Ягод», «мужчины и Поля» и приведённая
     к каноническим flows проекта.
 
     Принципы (type-unification):
-      * Все идентификаторы — string/uuid.
-      * Все денежные суммы — integer в копейках.
-      * snake_case во всех JSON-полях, `ordering` для порядка изображений.
-      * Пагинация: {items, total_count, limit, offset}.
-      * Ошибки: {code, message, details?}.
-      * Статусы товара: CREATED, ON_MODERATION, MODERATED, BLOCKED, HARD_BLOCKED.
-      * Каталог для B2C ходит через X-Service-Key (поля cost_price / reserved_quantity скрыты).
-      * События в Moderation и B2C идут через outbox с idempotency_key.
+    - Все идентификаторы — string/uuid.
+    - Все денежные суммы — integer в копейках.
+    - snake_case во всех JSON-полях, `ordering` для порядка изображений.
+    - Пагинация: {items, total_count, limit, offset}.
+    - Ошибки: {code, message, details?}.
+    - Статусы товара: CREATED, ON_MODERATION, MODERATED, BLOCKED, HARD_BLOCKED.
+    - Каталог для B2C ходит через X-Service-Key (поля cost_price / reserved_quantity скрыты).
+    - События в Moderation и B2C идут через outbox с idempotency_key.
+  contact:
+    name: NeoMarket Team
+    email: team@neomarket.local
 
 servers:
   - url: http://b2b:8000
@@ -46,7 +49,6 @@ tags:
     description: Приём событий MODERATED/BLOCKED от сервиса модерации
 
 paths:
-
   # ───────────────────── AUTH ─────────────────────
   /api/v1/auth/register:
     post:
@@ -57,15 +59,15 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SellerCreate' }
+            schema: { $ref: "#/components/schemas/SellerCreate" }
       responses:
-        '201':
+        "201":
           description: Успешная регистрация
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/TokenResponse' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /api/v1/auth/login:
     post:
@@ -76,15 +78,15 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/LoginRequest' }
+            schema: { $ref: "#/components/schemas/LoginRequest" }
       responses:
-        '200':
+        "200":
           description: Успешный вход
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/TokenResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /api/v1/auth/refresh:
     post:
@@ -95,14 +97,14 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/RefreshRequest' }
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
       responses:
-        '200':
+        "200":
           description: Новая пара токенов
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/TokenResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/v1/auth/logout:
     post:
@@ -113,9 +115,9 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/RefreshRequest' }
+            schema: { $ref: "#/components/schemas/RefreshRequest" }
       responses:
-        '204': { description: Refresh отозван }
+        "204": { description: Refresh отозван }
 
   # ───────────────────── SELLER ─────────────────────
   /api/v1/sellers/me:
@@ -125,12 +127,12 @@ paths:
       operationId: getMySellerProfile
       security: [{ HTTPBearer: [] }]
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SellerResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
+              schema: { $ref: "#/components/schemas/SellerResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
     patch:
       tags: [Seller]
       summary: Обновить профиль (IDOR-safe — id берётся из JWT)
@@ -140,22 +142,22 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SellerUpdate' }
+            schema: { $ref: "#/components/schemas/SellerUpdate" }
       responses:
-        '200':
+        "200":
           description: Обновлено
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SellerResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+              schema: { $ref: "#/components/schemas/SellerResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
     delete:
       tags: [Seller]
       summary: Удалить аккаунт продавца (soft-delete)
       operationId: deleteMySellerAccount
       security: [{ HTTPBearer: [] }]
       responses:
-        '204': { description: Аккаунт деактивирован }
+        "204": { description: Аккаунт деактивирован }
 
   # ───────────────────── CATEGORIES ─────────────────────
   /api/v1/categories:
@@ -171,13 +173,13 @@ paths:
           in: query
           schema: { type: boolean, default: false }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/CategoryResponse' }
+                items: { $ref: "#/components/schemas/CategoryResponse" }
     post:
       tags: [Categories]
       summary: Создать категорию (только админ)
@@ -187,15 +189,16 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/CategoryCreate' }
+            schema: { $ref: "#/components/schemas/CategoryCreate" }
       responses:
-        '201':
+        "201":
           description: Создана
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CategoryWithChildrenResponse' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+              schema:
+                { $ref: "#/components/schemas/CategoryWithChildrenResponse" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /api/v1/categories/tree:
     get:
@@ -203,28 +206,34 @@ paths:
       summary: Полное дерево категорий (используется витриной)
       operationId: getCategoriesTree
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/CategoryTreeResponse' }
+                items: { $ref: "#/components/schemas/CategoryTreeResponse" }
 
   /api/v1/categories/{category_id}:
     parameters:
-      - { name: category_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: category_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [Categories]
       summary: Категория с прямыми подкатегориями
       operationId: getCategory
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CategoryWithChildrenResponse' }
-        '404': { $ref: '#/components/responses/NotFound' }
+              schema:
+                { $ref: "#/components/schemas/CategoryWithChildrenResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [Categories]
       summary: Обновить категорию (только админ)
@@ -234,37 +243,43 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/CategoryUpdate' }
+            schema: { $ref: "#/components/schemas/CategoryUpdate" }
       responses:
-        '200':
+        "200":
           description: Обновлена
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CategoryWithChildrenResponse' }
+              schema:
+                { $ref: "#/components/schemas/CategoryWithChildrenResponse" }
     delete:
       tags: [Categories]
       summary: Удалить категорию (только админ, если в ней нет товаров)
       operationId: deleteCategory
       security: [{ HTTPBearer: [] }]
       responses:
-        '204': { description: Удалена }
-        '409': { $ref: '#/components/responses/Conflict' }
+        "204": { description: Удалена }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/categories/{category_id}/breadcrumbs:
     parameters:
-      - { name: category_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: category_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [Categories]
       summary: Цепочка категорий от корня до текущей
       operationId: getCategoryBreadcrumbs
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/CategoryResponse' }
+                items: { $ref: "#/components/schemas/CategoryResponse" }
 
   # ───────────────────── PRODUCTS (seller view) ─────────────────────
   /api/v1/products:
@@ -274,20 +289,28 @@ paths:
       operationId: listMyProducts
       security: [{ HTTPBearer: [] }]
       parameters:
-        - { name: limit,  in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
-        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, default: 20, minimum: 1, maximum: 100 },
+          }
+        - {
+            name: offset,
+            in: query,
+            schema: { type: integer, default: 0, minimum: 0 },
+          }
         - name: status
           in: query
-          schema: { $ref: '#/components/schemas/ProductStatus' }
+          schema: { $ref: "#/components/schemas/ProductStatus" }
         - name: include_deleted
           in: query
           schema: { type: boolean, default: false }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ProductPaginatedResponse' }
+              schema: { $ref: "#/components/schemas/ProductPaginatedResponse" }
     post:
       tags: [Products]
       summary: Создать товар (без SKU → статус CREATED, на модерацию НЕ идёт)
@@ -297,18 +320,23 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ProductCreate' }
+            schema: { $ref: "#/components/schemas/ProductCreate" }
       responses:
-        '201':
+        "201":
           description: Создан
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ProductResponse' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+              schema: { $ref: "#/components/schemas/ProductResponse" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /api/v1/products/{product_id}:
     parameters:
-      - { name: product_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: product_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [Products]
       summary: Карточка товара (seller — полная, X-Service-Key — без cost_price/reserved_quantity)
@@ -320,15 +348,15 @@ paths:
           required: false
           schema: { type: string, nullable: true }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/ProductResponse'
-                  - $ref: '#/components/schemas/ProductPublicResponse'
-        '404': { $ref: '#/components/responses/NotFound' }
+                  - $ref: "#/components/schemas/ProductResponse"
+                  - $ref: "#/components/schemas/ProductPublicResponse"
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [Products]
       summary: Редактирование. Если статус MODERATED/BLOCKED → перевод в ON_MODERATION + событие EDITED
@@ -338,29 +366,34 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ProductUpdate' }
+            schema: { $ref: "#/components/schemas/ProductUpdate" }
       responses:
-        '200':
+        "200":
           description: Обновлён
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ProductResponse' }
-        '403': { $ref: '#/components/responses/Forbidden' }  # HARD_BLOCKED, чужой товар
-        '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+              schema: { $ref: "#/components/schemas/ProductResponse" }
+        "403": { $ref: "#/components/responses/Forbidden" } # HARD_BLOCKED, чужой товар
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
     delete:
       tags: [Products]
       summary: Мягкое удаление (deleted=true), событие DELETED в Moderation и B2C
       operationId: deleteProduct
       security: [{ HTTPBearer: [] }]
       responses:
-        '204': { description: Помечен удалённым }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
+        "204": { description: Помечен удалённым }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/products/{product_id}/images:
     parameters:
-      - { name: product_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: product_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     post:
       tags: [Products]
       summary: Прикрепить изображение к товару
@@ -370,17 +403,22 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ImageAttachRequest' }
+            schema: { $ref: "#/components/schemas/ImageAttachRequest" }
       responses:
-        '201':
+        "201":
           description: Создано
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ProductImageResponse' }
+              schema: { $ref: "#/components/schemas/ProductImageResponse" }
 
   /api/v1/products/images/{image_id}:
     parameters:
-      - { name: image_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: image_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     patch:
       tags: [Products]
       summary: Обновить изображение товара (например, ordering)
@@ -390,38 +428,43 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ImageUpdateRequest' }
+            schema: { $ref: "#/components/schemas/ImageUpdateRequest" }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ProductImageResponse' }
+              schema: { $ref: "#/components/schemas/ProductImageResponse" }
     delete:
       tags: [Products]
       summary: Удалить изображение товара
       operationId: deleteProductImage
       security: [{ HTTPBearer: [] }]
       responses:
-        '204': { description: Удалено }
+        "204": { description: Удалено }
 
   # ───────────────────── SKUs ─────────────────────
   /api/v1/products/{product_id}/skus:
     parameters:
-      - { name: product_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: product_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [SKUs]
       summary: Все SKU товара (seller view)
       operationId: listProductSkus
       security: [{ HTTPBearer: [] }]
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/SKUResponse' }
+                items: { $ref: "#/components/schemas/SKUResponse" }
 
   /api/v1/skus:
     post:
@@ -433,31 +476,36 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SKUCreate' }
+            schema: { $ref: "#/components/schemas/SKUCreate" }
       responses:
-        '201':
+        "201":
           description: Создан
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SKUResponse' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+              schema: { $ref: "#/components/schemas/SKUResponse" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /api/v1/skus/{sku_id}:
     parameters:
-      - { name: sku_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: sku_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [SKUs]
       summary: Получить SKU (seller view)
       operationId: getSku
       security: [{ HTTPBearer: [] }]
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SKUResponse' }
-        '404': { $ref: '#/components/responses/NotFound' }
+              schema: { $ref: "#/components/schemas/SKUResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [SKUs]
       summary: Обновить SKU. Если товар MODERATED/BLOCKED → ON_MODERATION + событие EDITED
@@ -467,31 +515,36 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SKUUpdate' }
+            schema: { $ref: "#/components/schemas/SKUUpdate" }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SKUResponse' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+              schema: { $ref: "#/components/schemas/SKUResponse" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
     delete:
       tags: [SKUs]
       summary: Удалить SKU. Запрещено, если reserved_quantity > 0
       operationId: deleteSku
       security: [{ HTTPBearer: [] }]
       responses:
-        '204': { description: Удалён }
-        '409':
+        "204": { description: Удалён }
+        "409":
           description: Есть активные резервы
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+              schema: { $ref: "#/components/schemas/Error" }
 
   /api/v1/skus/{sku_id}/images:
     parameters:
-      - { name: sku_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: sku_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     post:
       tags: [SKUs]
       summary: Прикрепить изображение к SKU
@@ -501,17 +554,22 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ImageAttachRequest' }
+            schema: { $ref: "#/components/schemas/ImageAttachRequest" }
       responses:
-        '201':
+        "201":
           description: Создано
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SKUImageResponse' }
+              schema: { $ref: "#/components/schemas/SKUImageResponse" }
 
   /api/v1/skus/images/{image_id}:
     parameters:
-      - { name: image_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: image_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     patch:
       tags: [SKUs]
       summary: Обновить изображение SKU
@@ -521,20 +579,20 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ImageUpdateRequest' }
+            schema: { $ref: "#/components/schemas/ImageUpdateRequest" }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SKUImageResponse' }
+              schema: { $ref: "#/components/schemas/SKUImageResponse" }
     delete:
       tags: [SKUs]
       summary: Удалить изображение SKU
       operationId: deleteSkuImage
       security: [{ HTTPBearer: [] }]
       responses:
-        '204': { description: Удалено }
+        "204": { description: Удалено }
 
   # ───────────────────── INVOICES ─────────────────────
   /api/v1/invoices:
@@ -544,17 +602,25 @@ paths:
       operationId: listInvoices
       security: [{ HTTPBearer: [] }]
       parameters:
-        - { name: limit,  in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
-        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, default: 20, minimum: 1, maximum: 100 },
+          }
+        - {
+            name: offset,
+            in: query,
+            schema: { type: integer, default: 0, minimum: 0 },
+          }
         - name: status
           in: query
-          schema: { $ref: '#/components/schemas/InvoiceStatus' }
+          schema: { $ref: "#/components/schemas/InvoiceStatus" }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/InvoicePaginatedResponse' }
+              schema: { $ref: "#/components/schemas/InvoicePaginatedResponse" }
     post:
       tags: [Invoices]
       summary: Создать накладную (в статусе CREATED)
@@ -564,41 +630,51 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/InvoiceCreate' }
+            schema: { $ref: "#/components/schemas/InvoiceCreate" }
       responses:
-        '201':
+        "201":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/InvoiceResponse' }
+              schema: { $ref: "#/components/schemas/InvoiceResponse" }
 
   /api/v1/invoices/{invoice_id}:
     parameters:
-      - { name: invoice_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: invoice_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [Invoices]
       summary: Получить накладную (только если seller_id == JWT.sub)
       operationId: getInvoice
       security: [{ HTTPBearer: [] }]
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/InvoiceResponse' }
-        '404': { $ref: '#/components/responses/NotFound' }
+              schema: { $ref: "#/components/schemas/InvoiceResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       tags: [Invoices]
       summary: Удалить накладную (только в статусе CREATED)
       operationId: deleteInvoice
       security: [{ HTTPBearer: [] }]
       responses:
-        '204': { description: Удалена }
-        '409': { $ref: '#/components/responses/Conflict' }
+        "204": { description: Удалена }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/v1/invoices/{invoice_id}/accept:
     parameters:
-      - { name: invoice_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: invoice_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     post:
       tags: [Invoices]
       summary: |
@@ -610,14 +686,14 @@ paths:
         required: false
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/InvoiceAcceptRequest' }
+            schema: { $ref: "#/components/schemas/InvoiceAcceptRequest" }
       responses:
-        '200':
+        "200":
           description: Принята (полностью или частично)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/InvoiceResponse' }
-        '409': { $ref: '#/components/responses/Conflict' }
+              schema: { $ref: "#/components/schemas/InvoiceResponse" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   # ───────────────────── IMAGES (raw upload) ─────────────────────
   /api/v1/images:
@@ -630,23 +706,23 @@ paths:
         required: true
         content:
           multipart/form-data:
-            schema: { $ref: '#/components/schemas/ImageUploadRequest' }
+            schema: { $ref: "#/components/schemas/ImageUploadRequest" }
       responses:
-        '201':
+        "201":
           description: Файл сохранён
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ImageUploadResponse' }
-        '413':
+              schema: { $ref: "#/components/schemas/ImageUploadResponse" }
+        "413":
           description: Файл больше 5 МБ
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '415':
+              schema: { $ref: "#/components/schemas/Error" }
+        "415":
           description: Неподдерживаемый формат (magic bytes check)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+              schema: { $ref: "#/components/schemas/Error" }
 
   # ───────────────────── PUBLIC CATALOG (для B2C через X-Service-Key) ─────────────────────
   /api/v1/public/products:
@@ -655,12 +731,37 @@ paths:
       summary: Витрина — только MODERATED, не deleted, active_quantity > 0
       operationId: listPublicProducts
       parameters:
-        - { name: X-Service-Key, in: header, required: true, schema: { type: string } }
-        - { name: category_id,   in: query,  schema: { type: string, format: uuid, nullable: true } }
-        - { name: search,        in: query,  schema: { type: string, nullable: true, minLength: 3 } }
-        - { name: min_price,     in: query,  schema: { type: integer, minimum: 0, nullable: true } }
-        - { name: max_price,     in: query,  schema: { type: integer, minimum: 0, nullable: true } }
-        - { name: seller_id,     in: query,  schema: { type: string, format: uuid, nullable: true } }
+        - {
+            name: X-Service-Key,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: category_id,
+            in: query,
+            schema: { type: string, format: uuid, nullable: true },
+          }
+        - {
+            name: search,
+            in: query,
+            schema: { type: string, nullable: true, minLength: 3 },
+          }
+        - {
+            name: min_price,
+            in: query,
+            schema: { type: integer, minimum: 0, nullable: true },
+          }
+        - {
+            name: max_price,
+            in: query,
+            schema: { type: integer, minimum: 0, nullable: true },
+          }
+        - {
+            name: seller_id,
+            in: query,
+            schema: { type: string, format: uuid, nullable: true },
+          }
         - name: filters
           in: query
           style: deepObject
@@ -682,15 +783,24 @@ paths:
             type: string
             enum: [price_asc, price_desc, created_desc, popular]
             default: created_desc
-        - { name: limit,  in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
-        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, default: 20, minimum: 1, maximum: 100 },
+          }
+        - {
+            name: offset,
+            in: query,
+            schema: { type: integer, default: 0, minimum: 0 },
+          }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ProductPublicPaginatedResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
+              schema:
+                { $ref: "#/components/schemas/ProductPublicPaginatedResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/v1/public/products/batch:
     post:
@@ -698,7 +808,12 @@ paths:
       summary: Batch-получение карточек по списку product_id (для корзины B2C)
       operationId: batchPublicProducts
       parameters:
-        - { name: X-Service-Key, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Service-Key,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
       requestBody:
         required: true
         content:
@@ -712,7 +827,7 @@ paths:
                   items: { type: string, format: uuid }
                   maxItems: 100
       responses:
-        '200':
+        "200":
           description: |
             Возвращает массив только для существующих и публикуемых товаров.
             Отсутствующие в ответе товары B2C трактует как unavailable.
@@ -720,59 +835,94 @@ paths:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/ProductPublicResponse' }
+                items: { $ref: "#/components/schemas/ProductPublicResponse" }
 
   /api/v1/public/products/{product_id}:
     parameters:
-      - { name: product_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: product_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [Public Catalog]
       summary: Карточка товара для витрины
       operationId: getPublicProduct
       parameters:
-        - { name: X-Service-Key, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Service-Key,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ProductPublicResponse' }
-        '404': { $ref: '#/components/responses/NotFound' }
+              schema: { $ref: "#/components/schemas/ProductPublicResponse" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/public/products/{product_id}/similar:
     parameters:
-      - { name: product_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: product_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [Public Catalog]
       summary: Похожие товары (случайная выборка из той же категории)
       operationId: getPublicSimilarProducts
       parameters:
-        - { name: X-Service-Key, in: header, required: true, schema: { type: string } }
-        - { name: limit, in: query, schema: { type: integer, default: 10, minimum: 1, maximum: 50 } }
+        - {
+            name: X-Service-Key,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, default: 10, minimum: 1, maximum: 50 },
+          }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/ProductPublicShortResponse' }
+                items:
+                  { $ref: "#/components/schemas/ProductPublicShortResponse" }
 
   /api/v1/public/skus/{sku_id}:
     parameters:
-      - { name: sku_id, in: path, required: true, schema: { type: string, format: uuid } }
+      - {
+          name: sku_id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
     get:
       tags: [Public Catalog]
       summary: SKU для витрины (без cost_price / reserved_quantity)
       operationId: getPublicSku
       parameters:
-        - { name: X-Service-Key, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Service-Key,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
       responses:
-        '200':
+        "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SKUPublicResponse' }
+              schema: { $ref: "#/components/schemas/SKUPublicResponse" }
 
   # ───────────────────── INVENTORY ─────────────────────
   /api/v1/inventory/reserve:
@@ -784,25 +934,30 @@ paths:
         отправляет событие SKU_OUT_OF_STOCK в B2C. Идемпотентно по idempotency_key (TTL 1 час).
       operationId: reserveInventory
       parameters:
-        - { name: X-Service-Key, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Service-Key,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ReserveRequest' }
+            schema: { $ref: "#/components/schemas/ReserveRequest" }
       responses:
-        '200':
+        "200":
           description: Зарезервировано (или идемпотентный повтор)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ReserveResponse' }
-        '409':
+              schema: { $ref: "#/components/schemas/ReserveResponse" }
+        "409":
           description: |
             Не удалось зарезервировать (недостаточно остатка / товар заблокирован).
             В details — список проблемных sku.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+              schema: { $ref: "#/components/schemas/Error" }
 
   /api/v1/inventory/unreserve:
     post:
@@ -810,18 +965,23 @@ paths:
       summary: Снять резерв (при отмене заказа). Идемпотентно по order_id.
       operationId: unreserveInventory
       parameters:
-        - { name: X-Service-Key, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Service-Key,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/InventoryOrderRequest' }
+            schema: { $ref: "#/components/schemas/InventoryOrderRequest" }
       responses:
-        '200':
+        "200":
           description: Снято
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/InventoryOrderResponse' }
+              schema: { $ref: "#/components/schemas/InventoryOrderResponse" }
 
   /api/v1/inventory/fulfill:
     post:
@@ -831,18 +991,23 @@ paths:
         в DELIVERED). Уменьшает reserved_quantity и stock_quantity.
       operationId: fulfillInventory
       parameters:
-        - { name: X-Service-Key, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Service-Key,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/InventoryOrderRequest' }
+            schema: { $ref: "#/components/schemas/InventoryOrderRequest" }
       responses:
-        '200':
+        "200":
           description: Списано
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/InventoryOrderResponse' }
+              schema: { $ref: "#/components/schemas/InventoryOrderResponse" }
 
   # ───────────────────── MODERATION EVENTS ─────────────────────
   /api/v1/moderation/events:
@@ -855,23 +1020,27 @@ paths:
         в B2C (PRODUCT_BLOCKED).
       operationId: receiveModerationEvent
       parameters:
-        - { name: X-Service-Key, in: header, required: true, schema: { type: string } }
+        - {
+            name: X-Service-Key,
+            in: header,
+            required: true,
+            schema: { type: string },
+          }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ModerationEventRequest' }
+            schema: { $ref: "#/components/schemas/ModerationEventRequest" }
       responses:
-        '204': { description: Принято и обработано (или дубликат) }
-        '400':
+        "204": { description: Принято и обработано (или дубликат) }
+        "400":
           description: Невалидное тело события (не ретраить)
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
 components:
-
   securitySchemes:
     HTTPBearer:
       type: http
@@ -883,36 +1052,35 @@ components:
       description: Не авторизован / неверный токен
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+          schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
       description: Нет доступа (IDOR, HARD_BLOCKED, чужой ресурс)
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+          schema: { $ref: "#/components/schemas/Error" }
     NotFound:
       description: Не найдено
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+          schema: { $ref: "#/components/schemas/Error" }
     Conflict:
       description: Конфликт состояния
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+          schema: { $ref: "#/components/schemas/Error" }
     ValidationError:
       description: Невалидные данные
       content:
         application/json:
-          schema: { $ref: '#/components/schemas/Error' }
+          schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
-
     # ─── Общие типы ───
     Error:
       type: object
       required: [code, message]
       properties:
-        code:    { type: string, example: VALIDATION_ERROR }
+        code: { type: string, example: VALIDATION_ERROR }
         message: { type: string, example: "Поле 'title' обязательно" }
         details:
           type: object
@@ -925,52 +1093,63 @@ components:
       required: [total_count, limit, offset]
       properties:
         total_count: { type: integer, minimum: 0 }
-        limit:       { type: integer, minimum: 1 }
-        offset:      { type: integer, minimum: 0 }
+        limit: { type: integer, minimum: 1 }
+        offset: { type: integer, minimum: 0 }
+      description: "Унифицированный объект пагинации"
 
     # ─── Auth ───
     SellerCreate:
       type: object
       required: [email, password, first_name, last_name, company_name, inn]
       properties:
-        email:        { type: string, format: email }
-        password:     { type: string, minLength: 8, maxLength: 128 }
-        first_name:   { type: string, minLength: 1, maxLength: 100 }
-        last_name:    { type: string, minLength: 1, maxLength: 100 }
-        middle_name:  { type: string, nullable: true }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, maxLength: 128 }
+        first_name: { type: string, minLength: 1, maxLength: 100 }
+        last_name: { type: string, minLength: 1, maxLength: 100 }
+        middle_name: { type: string, nullable: true }
         company_name: { type: string }
-        inn:          { type: string, minLength: 10, maxLength: 12 }
-        phone:        { type: string, nullable: true }
+        inn: { type: string, minLength: 10, maxLength: 12 }
+        phone: { type: string, nullable: true }
 
     SellerUpdate:
       type: object
       properties:
-        first_name:   { type: string, nullable: true }
-        last_name:    { type: string, nullable: true }
-        middle_name:  { type: string, nullable: true }
+        first_name: { type: string, nullable: true }
+        last_name: { type: string, nullable: true }
+        middle_name: { type: string, nullable: true }
         company_name: { type: string, nullable: true }
-        phone:        { type: string, nullable: true }
+        phone: { type: string, nullable: true }
 
     SellerResponse:
       type: object
-      required: [id, email, first_name, last_name, company_name, inn, created_at, updated_at]
+      required:
+        [
+          id,
+          email,
+          first_name,
+          last_name,
+          company_name,
+          inn,
+          created_at,
+          updated_at,
+        ]
       properties:
-        id:           { type: string, format: uuid }
-        email:        { type: string, format: email }
-        first_name:   { type: string }
-        last_name:    { type: string }
-        middle_name:  { type: string, nullable: true }
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        first_name: { type: string }
+        last_name: { type: string }
+        middle_name: { type: string, nullable: true }
         company_name: { type: string }
-        inn:          { type: string }
-        phone:        { type: string, nullable: true }
-        created_at:   { type: string, format: date-time }
-        updated_at:   { type: string, format: date-time }
+        inn: { type: string }
+        phone: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
     LoginRequest:
       type: object
       required: [email, password]
       properties:
-        email:    { type: string, format: email }
+        email: { type: string, format: email }
         password: { type: string }
 
     RefreshRequest:
@@ -983,24 +1162,24 @@ components:
       type: object
       required: [user_id, access_token, refresh_token, expires_in, token_type]
       properties:
-        user_id:       { type: string, format: uuid }
-        access_token:  { type: string }
+        user_id: { type: string, format: uuid }
+        access_token: { type: string }
         refresh_token: { type: string }
-        token_type:    { type: string, default: Bearer }
-        expires_in:    { type: integer, description: TTL access-токена в секундах }
+        token_type: { type: string, default: Bearer }
+        expires_in: { type: integer, description: TTL access-токена в секундах }
 
     # ─── Categories ───
     CategoryCreate:
       type: object
       required: [name]
       properties:
-        name:      { type: string, minLength: 1, maxLength: 255 }
+        name: { type: string, minLength: 1, maxLength: 255 }
         parent_id: { type: string, format: uuid, nullable: true }
 
     CategoryUpdate:
       type: object
       properties:
-        name:      { type: string, nullable: true }
+        name: { type: string, nullable: true }
         parent_id: { type: string, format: uuid, nullable: true }
         is_active: { type: boolean, nullable: true }
 
@@ -1008,33 +1187,37 @@ components:
       type: object
       required: [id, name, parent_id, level, path, is_active, created_at]
       properties:
-        id:         { type: string, format: uuid }
-        name:       { type: string }
-        parent_id:  { type: string, format: uuid, nullable: true }
-        level:      { type: integer, description: Глубина в дереве, корень=0 }
-        path:       { type: string, description: Materialized path, например "electronics/phones" }
-        is_active:  { type: boolean }
+        id: { type: string, format: uuid }
+        name: { type: string }
+        parent_id: { type: string, format: uuid, nullable: true }
+        level: { type: integer, description: "Глубина в дереве, корень=0" }
+        path:
+          {
+            type: string,
+            description: "Materialized path, например electronics/phones",
+          }
+        is_active: { type: boolean }
         created_at: { type: string, format: date-time }
 
     CategoryWithChildrenResponse:
       allOf:
-        - $ref: '#/components/schemas/CategoryResponse'
+        - $ref: "#/components/schemas/CategoryResponse"
         - type: object
           required: [children]
           properties:
             children:
               type: array
-              items: { $ref: '#/components/schemas/CategoryResponse' }
+              items: { $ref: "#/components/schemas/CategoryResponse" }
 
     CategoryTreeResponse:
       type: object
       required: [id, name, children]
       properties:
-        id:       { type: string, format: uuid }
-        name:     { type: string }
+        id: { type: string, format: uuid }
+        name: { type: string }
         children:
           type: array
-          items: { $ref: '#/components/schemas/CategoryTreeResponse' }
+          items: { $ref: "#/components/schemas/CategoryTreeResponse" }
 
     # ─── Products ───
     ProductStatus:
@@ -1051,12 +1234,12 @@ components:
       type: object
       required: [name, value]
       properties:
-        name:  { type: string, example: "Бренд" }
+        name: { type: string, example: "Бренд" }
         value: { type: string, example: "Apple" }
 
     CharacteristicResponse:
       allOf:
-        - $ref: '#/components/schemas/Characteristic'
+        - $ref: "#/components/schemas/Characteristic"
         - type: object
           required: [id]
           properties:
@@ -1066,45 +1249,49 @@ components:
       type: object
       required: [url]
       properties:
-        url:      { type: string, description: URL уже загруженного изображения (из /api/v1/images) }
+        url:
+          {
+            type: string,
+            description: URL уже загруженного изображения (из /api/v1/images),
+          }
         ordering: { type: integer, default: 0 }
 
     ProductImageResponse:
       type: object
       required: [id, url, ordering]
       properties:
-        id:       { type: string, format: uuid }
-        url:      { type: string }
+        id: { type: string, format: uuid }
+        url: { type: string }
         ordering: { type: integer }
 
     ProductCreate:
       type: object
       required: [title, description, category_id]
       properties:
-        title:        { type: string, minLength: 1, maxLength: 255 }
-        description:  { type: string, minLength: 1, maxLength: 5000 }
-        category_id:  { type: string, format: uuid }
-        slug:         { type: string, nullable: true }
+        title: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: string, minLength: 1, maxLength: 5000 }
+        category_id: { type: string, format: uuid }
+        slug: { type: string, nullable: true }
         images:
           type: array
-          items: { $ref: '#/components/schemas/ProductImageCreate' }
+          items: { $ref: "#/components/schemas/ProductImageCreate" }
           default: []
         characteristics:
           type: array
-          items: { $ref: '#/components/schemas/Characteristic' }
+          items: { $ref: "#/components/schemas/Characteristic" }
           default: []
 
     ProductUpdate:
       type: object
       description: Семантика PATCH — все поля опциональны.
       properties:
-        title:           { type: string, nullable: true, minLength: 1, maxLength: 255 }
-        description:     { type: string, nullable: true, maxLength: 5000 }
-        category_id:     { type: string, format: uuid, nullable: true }
+        title: { type: string, nullable: true, minLength: 1, maxLength: 255 }
+        description: { type: string, nullable: true, maxLength: 5000 }
+        category_id: { type: string, format: uuid, nullable: true }
         characteristics:
           type: array
           nullable: true
-          items: { $ref: '#/components/schemas/Characteristic' }
+          items: { $ref: "#/components/schemas/Characteristic" }
 
     ProductResponse:
       type: object
@@ -1126,25 +1313,25 @@ components:
         - created_at
         - updated_at
       properties:
-        id:                 { type: string, format: uuid }
-        seller_id:          { type: string, format: uuid }
-        category_id:        { type: string, format: uuid }
-        title:              { type: string }
-        slug:               { type: string }
-        description:        { type: string }
-        status:             { $ref: '#/components/schemas/ProductStatus' }
-        deleted:            { type: boolean }
+        id: { type: string, format: uuid }
+        seller_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        description: { type: string }
+        status: { $ref: "#/components/schemas/ProductStatus" }
+        deleted: { type: boolean }
         blocking_reason_id: { type: string, format: uuid, nullable: true }
-        moderator_comment:  { type: string, nullable: true }
+        moderator_comment: { type: string, nullable: true }
         images:
           type: array
-          items: { $ref: '#/components/schemas/ProductImageResponse' }
+          items: { $ref: "#/components/schemas/ProductImageResponse" }
         characteristics:
           type: array
-          items: { $ref: '#/components/schemas/CharacteristicResponse' }
+          items: { $ref: "#/components/schemas/CharacteristicResponse" }
         skus:
           type: array
-          items: { $ref: '#/components/schemas/SKUResponse' }
+          items: { $ref: "#/components/schemas/SKUResponse" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -1165,22 +1352,22 @@ components:
         - created_at
         - updated_at
       properties:
-        id:           { type: string, format: uuid }
-        seller_id:    { type: string, format: uuid }
-        category_id:  { type: string, format: uuid }
-        title:        { type: string }
-        slug:         { type: string }
-        description:  { type: string }
-        status:       { $ref: '#/components/schemas/ProductStatus' }
+        id: { type: string, format: uuid }
+        seller_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        description: { type: string }
+        status: { $ref: "#/components/schemas/ProductStatus" }
         images:
           type: array
-          items: { $ref: '#/components/schemas/ProductImageResponse' }
+          items: { $ref: "#/components/schemas/ProductImageResponse" }
         characteristics:
           type: array
-          items: { $ref: '#/components/schemas/CharacteristicResponse' }
+          items: { $ref: "#/components/schemas/CharacteristicResponse" }
         skus:
           type: array
-          items: { $ref: '#/components/schemas/SKUPublicResponse' }
+          items: { $ref: "#/components/schemas/SKUPublicResponse" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -1188,28 +1375,34 @@ components:
       type: object
       required: [id, title, slug, status, category_id, deleted, created_at]
       properties:
-        id:          { type: string, format: uuid }
-        title:       { type: string }
-        slug:        { type: string }
-        status:      { $ref: '#/components/schemas/ProductStatus' }
+        id: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        status: { $ref: "#/components/schemas/ProductStatus" }
         category_id: { type: string, format: uuid }
-        deleted:     { type: boolean }
-        created_at:  { type: string, format: date-time }
-        min_price:   { type: integer, nullable: true, description: Минимальная цена SKU в копейках }
+        deleted: { type: boolean }
+        created_at: { type: string, format: date-time }
+        min_price:
+          {
+            type: integer,
+            nullable: true,
+            description: Минимальная цена SKU в копейках,
+          }
         cover_image: { type: string, nullable: true }
 
     ProductPublicShortResponse:
       type: object
       required: [id, title, slug, status, category_id, created_at, min_price]
       properties:
-        id:          { type: string, format: uuid }
-        title:       { type: string }
-        slug:        { type: string }
-        status:      { $ref: '#/components/schemas/ProductStatus' }
+        id: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        status: { $ref: "#/components/schemas/ProductStatus" }
         category_id: { type: string, format: uuid }
-        min_price:   { type: integer, description: Минимальная цена SKU в копейках }
+        min_price:
+          { type: integer, description: Минимальная цена SKU в копейках }
         cover_image: { type: string, nullable: true }
-        created_at:  { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
 
     ProductPaginatedResponse:
       type: object
@@ -1217,10 +1410,10 @@ components:
       properties:
         items:
           type: array
-          items: { $ref: '#/components/schemas/ProductShortResponse' }
+          items: { $ref: "#/components/schemas/ProductShortResponse" }
         total_count: { type: integer }
-        limit:       { type: integer }
-        offset:      { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
 
     ProductPublicPaginatedResponse:
       type: object
@@ -1228,25 +1421,25 @@ components:
       properties:
         items:
           type: array
-          items: { $ref: '#/components/schemas/ProductPublicShortResponse' }
+          items: { $ref: "#/components/schemas/ProductPublicShortResponse" }
         total_count: { type: integer }
-        limit:       { type: integer }
-        offset:      { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
 
     # ─── SKU ───
     SKUImageCreate:
       type: object
       required: [url]
       properties:
-        url:      { type: string }
+        url: { type: string }
         ordering: { type: integer, default: 0 }
 
     SKUImageResponse:
       type: object
       required: [id, url, ordering]
       properties:
-        id:       { type: string, format: uuid }
-        url:      { type: string }
+        id: { type: string, format: uuid }
+        url: { type: string }
         ordering: { type: integer }
 
     SKUCreate:
@@ -1254,32 +1447,43 @@ components:
       required: [product_id, name, price]
       properties:
         product_id: { type: string, format: uuid }
-        name:       { type: string, minLength: 1, maxLength: 255 }
-        price:      { type: integer, minimum: 0, description: Цена в копейках }
-        discount:   { type: integer, default: 0, minimum: 0, description: Скидка в копейках }
-        cost_price: { type: integer, nullable: true, description: Себестоимость в копейках (видна только seller'у) }
-        article:    { type: string, nullable: true }
+        name: { type: string, minLength: 1, maxLength: 255 }
+        price: { type: integer, minimum: 0, description: Цена в копейках }
+        discount:
+          {
+            type: integer,
+            default: 0,
+            minimum: 0,
+            description: Скидка в копейках,
+          }
+        cost_price:
+          {
+            type: integer,
+            nullable: true,
+            description: Себестоимость в копейках (видна только seller'у),
+          }
+        article: { type: string, nullable: true }
         images:
           type: array
-          items: { $ref: '#/components/schemas/SKUImageCreate' }
+          items: { $ref: "#/components/schemas/SKUImageCreate" }
           default: []
         characteristics:
           type: array
-          items: { $ref: '#/components/schemas/Characteristic' }
+          items: { $ref: "#/components/schemas/Characteristic" }
           default: []
 
     SKUUpdate:
       type: object
       properties:
-        name:       { type: string, nullable: true }
-        price:      { type: integer, nullable: true, minimum: 0 }
-        discount:   { type: integer, nullable: true, minimum: 0 }
+        name: { type: string, nullable: true }
+        price: { type: integer, nullable: true, minimum: 0 }
+        discount: { type: integer, nullable: true, minimum: 0 }
         cost_price: { type: integer, nullable: true }
-        article:    { type: string, nullable: true }
+        article: { type: string, nullable: true }
         characteristics:
           type: array
           nullable: true
-          items: { $ref: '#/components/schemas/Characteristic' }
+          items: { $ref: "#/components/schemas/Characteristic" }
 
     SKUResponse:
       type: object
@@ -1300,22 +1504,32 @@ components:
         - created_at
         - updated_at
       properties:
-        id:                 { type: string, format: uuid }
-        product_id:         { type: string, format: uuid }
-        name:               { type: string }
-        price:              { type: integer, description: В копейках }
-        discount:           { type: integer, description: В копейках }
-        cost_price:         { type: integer, nullable: true, description: В копейках, только seller-view }
-        stock_quantity:     { type: integer, description: Всего на складе }
-        active_quantity:    { type: integer, description: Доступно к продаже (stock - reserved) }
-        reserved_quantity:  { type: integer, description: Зарезервировано в корзинах/заказах, только seller-view }
-        article:            { type: string, nullable: true }
+        id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        name: { type: string }
+        price: { type: integer, description: В копейках }
+        discount: { type: integer, description: В копейках }
+        cost_price:
+          {
+            type: integer,
+            nullable: true,
+            description: "В копейках, только seller-view",
+          }
+        stock_quantity: { type: integer, description: Всего на складе }
+        active_quantity:
+          { type: integer, description: Доступно к продаже (stock - reserved) }
+        reserved_quantity:
+          {
+            type: integer,
+            description: "Зарезервировано в корзинах/заказах, только seller-view",
+          }
+        article: { type: string, nullable: true }
         images:
           type: array
-          items: { $ref: '#/components/schemas/SKUImageResponse' }
+          items: { $ref: "#/components/schemas/SKUImageResponse" }
         characteristics:
           type: array
-          items: { $ref: '#/components/schemas/CharacteristicResponse' }
+          items: { $ref: "#/components/schemas/CharacteristicResponse" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -1334,20 +1548,20 @@ components:
         - images
         - characteristics
       properties:
-        id:               { type: string, format: uuid }
-        product_id:       { type: string, format: uuid }
-        name:             { type: string }
-        price:            { type: integer }
-        discount:         { type: integer }
-        stock_quantity:   { type: integer }
-        active_quantity:  { type: integer }
-        article:          { type: string, nullable: true }
+        id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        name: { type: string }
+        price: { type: integer }
+        discount: { type: integer }
+        stock_quantity: { type: integer }
+        active_quantity: { type: integer }
+        article: { type: string, nullable: true }
         images:
           type: array
-          items: { $ref: '#/components/schemas/SKUImageResponse' }
+          items: { $ref: "#/components/schemas/SKUImageResponse" }
         characteristics:
           type: array
-          items: { $ref: '#/components/schemas/CharacteristicResponse' }
+          items: { $ref: "#/components/schemas/CharacteristicResponse" }
 
     # ─── Invoices ───
     InvoiceStatus:
@@ -1358,17 +1572,18 @@ components:
       type: object
       required: [sku_id, quantity]
       properties:
-        sku_id:   { type: string, format: uuid }
+        sku_id: { type: string, format: uuid }
         quantity: { type: integer, minimum: 1 }
 
     InvoiceItemResponse:
       type: object
       required: [id, sku_id, quantity, accepted_quantity]
       properties:
-        id:                 { type: string, format: uuid }
-        sku_id:             { type: string, format: uuid }
-        quantity:           { type: integer }
-        accepted_quantity:  { type: integer, description: Фактически принятое количество }
+        id: { type: string, format: uuid }
+        sku_id: { type: string, format: uuid }
+        quantity: { type: integer }
+        accepted_quantity:
+          { type: integer, description: Фактически принятое количество }
 
     InvoiceCreate:
       type: object
@@ -1377,7 +1592,7 @@ components:
         items:
           type: array
           minItems: 1
-          items: { $ref: '#/components/schemas/InvoiceItemCreate' }
+          items: { $ref: "#/components/schemas/InvoiceItemCreate" }
 
     InvoiceAcceptRequest:
       type: object
@@ -1391,23 +1606,29 @@ components:
             type: object
             required: [invoice_item_id, accepted_quantity]
             properties:
-              invoice_item_id:    { type: string, format: uuid }
-              accepted_quantity:  { type: integer, minimum: 0 }
+              invoice_item_id: { type: string, format: uuid }
+              accepted_quantity: { type: integer, minimum: 0 }
 
     InvoiceResponse:
       type: object
       required: [id, seller_id, status, items, created_at, updated_at]
       properties:
-        id:         { type: string, format: uuid }
-        seller_id:  { type: string, format: uuid }
-        status:     { $ref: '#/components/schemas/InvoiceStatus' }
+        id: { type: string, format: uuid }
+        seller_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/InvoiceStatus" }
         items:
           type: array
-          items: { $ref: '#/components/schemas/InvoiceItemResponse' }
+          items: { $ref: "#/components/schemas/InvoiceItemResponse" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         accepted_at: { type: string, format: date-time, nullable: true }
-        accepted_by: { type: string, format: uuid, nullable: true, description: Оператор-админ, принявший накладную }
+        accepted_by:
+          {
+            type: string,
+            format: uuid,
+            nullable: true,
+            description: "Оператор-админ, принявший накладную",
+          }
 
     InvoicePaginatedResponse:
       type: object
@@ -1415,10 +1636,10 @@ components:
       properties:
         items:
           type: array
-          items: { $ref: '#/components/schemas/InvoiceResponse' }
+          items: { $ref: "#/components/schemas/InvoiceResponse" }
         total_count: { type: integer }
-        limit:       { type: integer }
-        offset:      { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
 
     # ─── Images ───
     ImageEntityType:
@@ -1432,7 +1653,7 @@ components:
         file:
           type: string
           format: binary
-        entity_type: { $ref: '#/components/schemas/ImageEntityType' }
+        entity_type: { $ref: "#/components/schemas/ImageEntityType" }
         entity_id:
           type: string
           format: uuid
@@ -1444,24 +1665,34 @@ components:
       type: object
       required: [id, url, ordering, entity_type]
       properties:
-        id:          { type: string, format: uuid }
-        url:         { type: string }
-        ordering:    { type: integer }
-        entity_type: { $ref: '#/components/schemas/ImageEntityType' }
-        entity_id:   { type: string, format: uuid, nullable: true }
+        id: { type: string, format: uuid }
+        url: { type: string }
+        ordering: { type: integer }
+        entity_type: { $ref: "#/components/schemas/ImageEntityType" }
+        entity_id: { type: string, format: uuid, nullable: true }
 
     ImageAttachRequest:
       type: object
       required: [url]
       properties:
-        image_id: { type: string, format: uuid, nullable: true, description: Если изображение уже загружено через /images }
-        url:      { type: string, description: Используется, если image_id не передан (внешний URL) }
+        image_id:
+          {
+            type: string,
+            format: uuid,
+            nullable: true,
+            description: Если изображение уже загружено через /images,
+          }
+        url:
+          {
+            type: string,
+            description: "Используется, если image_id не передан (внешний URL)",
+          }
         ordering: { type: integer, default: 0 }
 
     ImageUpdateRequest:
       type: object
       properties:
-        url:      { type: string, nullable: true }
+        url: { type: string, nullable: true }
         ordering: { type: integer, nullable: true }
 
     # ─── Inventory ───
@@ -1469,7 +1700,7 @@ components:
       type: object
       required: [sku_id, quantity]
       properties:
-        sku_id:   { type: string, format: uuid }
+        sku_id: { type: string, format: uuid }
         quantity: { type: integer, minimum: 1 }
 
     ReserveRequest:
@@ -1477,18 +1708,18 @@ components:
       required: [idempotency_key, order_id, items]
       properties:
         idempotency_key: { type: string, format: uuid, description: TTL 1 час }
-        order_id:        { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
         items:
           type: array
           minItems: 1
-          items: { $ref: '#/components/schemas/InventoryItem' }
+          items: { $ref: "#/components/schemas/InventoryItem" }
 
     ReserveResponse:
       type: object
       required: [order_id, status, reserved_at]
       properties:
-        order_id:    { type: string, format: uuid }
-        status:      { type: string, enum: [RESERVED] }
+        order_id: { type: string, format: uuid }
+        status: { type: string, enum: [RESERVED] }
         reserved_at: { type: string, format: date-time }
 
     InventoryOrderRequest:
@@ -1499,14 +1730,14 @@ components:
         items:
           type: array
           minItems: 1
-          items: { $ref: '#/components/schemas/InventoryItem' }
+          items: { $ref: "#/components/schemas/InventoryItem" }
 
     InventoryOrderResponse:
       type: object
       required: [order_id, status, processed_at]
       properties:
-        order_id:     { type: string, format: uuid }
-        status:       { type: string, enum: [UNRESERVED, FULFILLED] }
+        order_id: { type: string, format: uuid }
+        status: { type: string, enum: [UNRESERVED, FULFILLED] }
         processed_at: { type: string, format: date-time }
 
     # ─── Moderation events (приём от Moderation Service) ───
@@ -1518,23 +1749,38 @@ components:
       type: object
       required: [idempotency_key, product_id, event_type, occurred_at]
       properties:
-        idempotency_key:    { type: string, format: uuid }
-        product_id:         { type: string, format: uuid }
-        event_type:         { $ref: '#/components/schemas/ModerationEventType' }
-        moderator_id:       { type: string, format: uuid, nullable: true }
-        moderator_comment:  { type: string, nullable: true }
-        blocking_reason_id: { type: string, format: uuid, nullable: true, description: Обязательно при BLOCKED }
-        hard_block:         { type: boolean, default: false, description: При true → товар уходит в HARD_BLOCKED }
+        idempotency_key: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        event_type: { $ref: "#/components/schemas/ModerationEventType" }
+        moderator_id: { type: string, format: uuid, nullable: true }
+        moderator_comment: { type: string, nullable: true }
+        blocking_reason_id:
+          {
+            type: string,
+            format: uuid,
+            nullable: true,
+            description: Обязательно при BLOCKED,
+          }
+        hard_block:
+          {
+            type: boolean,
+            default: false,
+            description: При true → товар уходит в HARD_BLOCKED,
+          }
         field_reports:
           type: array
           nullable: true
-          items: { $ref: '#/components/schemas/FieldReport' }
+          items: { $ref: "#/components/schemas/FieldReport" }
         occurred_at: { type: string, format: date-time }
 
     FieldReport:
       type: object
       required: [field_name, comment]
       properties:
-        field_name: { type: string, description: 'например "title", "description", "images[0]"' }
-        sku_id:     { type: string, format: uuid, nullable: true }
-        comment:    { type: string }
+        field_name:
+          {
+            type: string,
+            description: 'например "title", "description", "images[0]"',
+          }
+        sku_id: { type: string, format: uuid, nullable: true }
+        comment: { type: string }
