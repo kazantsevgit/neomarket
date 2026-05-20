@@ -118,6 +118,21 @@ class ProductCreate(BaseModel):
         return v
 
 
+class ProductUpdate(BaseModel):
+    """Схема для обновления товара (PATCH /products/{id})."""
+    title: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    category_id: uuid.UUID
+    attributes: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    images: List[ProductImageCreate] = Field(..., min_length=1)
+
+    @field_validator("images")
+    @classmethod
+    def images_not_empty(cls, v: List[ProductImageCreate]) -> List[ProductImageCreate]:
+        if not v:
+            raise ValueError("images must contain at least one image")
+        return v
+
 class ProductResponse(BaseModel):
     id: uuid.UUID
     seller_id: uuid.UUID
