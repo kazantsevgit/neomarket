@@ -11,6 +11,8 @@ from sqlalchemy.orm import selectinload
 from app.models.category import Category
 from app.models.product import Product, ProductStatus, SKU
 from app.schemas.product import ProductCreate, ProductImageCreate
+from app.schemas.product import ProductUpdate
+
 
 
 def _slugify(title: str) -> str:
@@ -95,3 +97,51 @@ async def get_product(
             detail="Product not found",
         )
     return product
+
+
+async def update_product(
+    db: AsyncSession,
+    product_id: uuid.UUID,
+    data: ProductUpdate,
+    seller_id: uuid.UUID,
+) -> Product:
+    """Обновление товара с проверкой HARD_BLOCKED."""
+    product = await get_product(db, product_id, seller_id=seller_id)
+
+    if product.status == ProductStatus.HARD_BLOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot modify HARD_BLOCKED product",
+        )
+
+    product.title = data.title
+    product.slug = _slugify(data.title)
+    product.description = data.description
+    product.category_id = data.category_id
+    product.characteristics = _attributes_to_characteristics(data.attributes or {})
+    product.images = _images_to_storage(data.images)
+    product.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(product)
+    return product
+
+
+async def delete_product(
+    db: AsyncSession,
+    product_id: uuid.UUID,
+    seller_id: uuid.UUID,
+) -> None:
+    """Мягкое удаление товара с проверкой HARD_BLOCKED."""
+    product = await get_product(db, product_id, seller_id=seller_id)
+
+    if product.status == ProductStatus.HARD_BLOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete HARD_BLOCKED product",
+        )
+
+    product.deleted = True
+    product.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
