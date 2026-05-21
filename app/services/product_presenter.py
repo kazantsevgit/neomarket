@@ -5,6 +5,10 @@ from typing import Any
 
 from app.models.product import Product, SKU
 from app.schemas.product import (
+    B2CCharacteristic,
+    B2CProductImage,
+    B2CProductResponse,
+    B2CSkuResponse,
     BlockingReasonDetail,
     CharacteristicResponse,
     FieldReportResponse,
@@ -118,4 +122,41 @@ def product_to_public_response(product: Product) -> ProductPublicResponse:
         skus=[sku_to_public_response(sku) for sku in product.skus],
         created_at=product.created_at,
         updated_at=product.updated_at,
+    )
+
+
+def _b2c_product_images(images: list[dict]) -> list[B2CProductImage]:
+    return [B2CProductImage(url=img["url"], ordering=img["ordering"]) for img in images]
+
+
+def _b2c_characteristics(items: list[dict]) -> list[B2CCharacteristic]:
+    return [B2CCharacteristic(name=item["name"], value=item["value"]) for item in items]
+
+
+def sku_to_b2c_response(sku: SKU) -> B2CSkuResponse:
+    image: str | None = None
+    if sku.images_rel:
+        image = min(sku.images_rel, key=lambda img: img.ordering).url
+    return B2CSkuResponse(
+        id=sku.id,
+        name=sku.name,
+        price=sku.price,
+        discount=sku.discount,
+        image=image,
+        active_quantity=sku.active_quantity,
+        in_stock=sku.active_quantity > 0,
+        characteristics=[B2CCharacteristic(name=ch.name, value=ch.value) for ch in sku.characteristics_rel],
+    )
+
+
+def product_to_b2c_response(product: Product) -> B2CProductResponse:
+    return B2CProductResponse(
+        id=product.id,
+        slug=product.slug,
+        title=product.title,
+        description=product.description,
+        images=_b2c_product_images(product.images),
+        status=product.status.value,
+        characteristics=_b2c_characteristics(product.characteristics),
+        skus=[sku_to_b2c_response(sku) for sku in product.skus],
     )
