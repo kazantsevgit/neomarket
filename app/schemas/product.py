@@ -171,3 +171,37 @@ class ProductPublicResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── B2C Catalog (canonic flow B2C-3) ──────────────────────────────────────────
+
+class B2CCharacteristic(BaseModel):
+    name: str
+    value: str
+
+
+class B2CProductImage(BaseModel):
+    url: str
+    ordering: int
+
+
+class B2CSkuResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    price: int
+    discount: int
+    image: Optional[str] = None
+    active_quantity: int
+    in_stock: bool
+    characteristics: List[B2CCharacteristic]
+
+
+class B2CProductResponse(BaseModel):
+    id: uuid.UUID
+    slug: str
+    title: str
+    description: Optional[str] = None
+    images: List[B2CProductImage]
+    status: str
+    characteristics: List[B2CCharacteristic]
+    skus: List[B2CSkuResponse]
