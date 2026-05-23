@@ -173,6 +173,13 @@ class ProductPublicResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProductPublicPaginatedResponse(BaseModel):
+    items: List[ProductPublicResponse]
+    total_count: int
+    limit: int
+    offset: int
+
+
 # ── B2C Catalog (canonic flow B2C-3) ──────────────────────────────────────────
 
 class B2CCharacteristic(BaseModel):
