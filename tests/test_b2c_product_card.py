@@ -1,5 +1,5 @@
 """
-B2C-3: GET /api/v1/products/{id} — карточка товара для покупателя.
+B2C-3: GET /api/v1/catalog/products/{product_id} — карточка товара для покупателя.
 Покупатель смотрит фото, читает описание, выбирает вариант.
 cost_price / reserved_quantity не должны просочиться в ответ.
 """
@@ -18,7 +18,6 @@ PRODUCT_ID = uuid.uuid4()
 SKU_ID = uuid.uuid4()
 CATEGORY_ID = uuid.uuid4()
 _NOW = datetime.now(timezone.utc)
-SERVICE_KEY = "dev-b2b-service-key"
 
 
 def make_product(
@@ -36,7 +35,7 @@ def make_product(
     p.status = status
     p.deleted = deleted
     p.images = [
-        {"url": "https://cdn.neomarket.ru/images/iphone15-front.jpg", "ordering": 0},
+        {"id": str(uuid.uuid4()), "url": "https://cdn.neomarket.ru/images/iphone15-front.jpg", "ordering": 0},
     ]
     p.characteristics = [
         {"name": "Бренд", "value": "Apple"},
@@ -57,8 +56,10 @@ def make_sku(*, stock_quantity: int = 5, reserved_quantity: int = 0) -> MagicMoc
     s.stock_quantity = stock_quantity
     s.reserved_quantity = reserved_quantity
     s.active_quantity = max(0, stock_quantity - reserved_quantity)
+    s.article = "IP15-256-BLK"
 
     img = MagicMock()
+    img.id = uuid.uuid4()
     img.url = "/s3/iphone15-black-256.jpg"
     img.ordering = 0
     s.images_rel = [img]
@@ -86,46 +87,41 @@ async def make_client():
 
 # ── Happy path ────────────────────────────────────────────────────────────────
 
-async def test_product_card_returns_full_data_with_skus(mock_db):
+async def test_catalog_product_card_returns_full_data_with_skus(mock_db):
     product = make_product()
     product.skus = [make_sku()]
     mock_db.get.return_value = product
 
     async with await make_client() as client:
-        resp = await client.get(
-            f"/api/v1/products/{PRODUCT_ID}",
-            headers={"X-Service-Key": SERVICE_KEY},
-        )
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}")
 
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == str(PRODUCT_ID)
+    assert data["name"] == "iPhone 15 Pro Max"
     assert data["slug"] == "iphone-15-pro-max"
-    assert data["title"] == "iPhone 15 Pro Max"
     assert data["description"] == "Флагманский смартфон Apple"
-    assert data["status"] == "MODERATED"
+    assert data["min_price"] == 12_999_000
+    assert data["has_stock"] is True
 
     assert len(data["images"]) == 1
+    assert "id" in data["images"][0]
     assert data["images"][0]["url"] == "https://cdn.neomarket.ru/images/iphone15-front.jpg"
     assert data["images"][0]["ordering"] == 0
-
-    assert len(data["characteristics"]) == 1
-    assert data["characteristics"][0] == {"name": "Бренд", "value": "Apple"}
 
     assert len(data["skus"]) == 1
     sku = data["skus"][0]
     assert sku["id"] == str(SKU_ID)
     assert sku["name"] == "256GB Black"
     assert sku["price"] == 12_999_000
-    assert sku["discount"] == 0
-    assert sku["image"] == "/s3/iphone15-black-256.jpg"
-    assert sku["active_quantity"] == 5
-    assert sku["in_stock"] is True
-    assert len(sku["characteristics"]) == 1
+    assert sku["available_quantity"] == 5
+    assert len(sku["images"]) == 1
+    assert "id" in sku["images"][0]
+    assert sku["images"][0]["url"] == "/s3/iphone15-black-256.jpg"
 
     for forbidden in ("seller_id", "category_id", "created_at", "updated_at", "deleted",
-                      "blocking_reason", "field_reports", "moderator_comment"):
-        assert forbidden not in data, f"{forbidden} should not leak in B2C response"
+                      "blocking_reason", "field_reports", "moderator_comment", "title"):
+        assert forbidden not in data, f"{forbidden} should not leak in catalog response"
 
 
 # ── Security: seller-internal fields ─────────────────────────────────────────
@@ -136,10 +132,7 @@ async def test_cost_price_absent_in_response(mock_db):
     mock_db.get.return_value = product
 
     async with await make_client() as client:
-        resp = await client.get(
-            f"/api/v1/products/{PRODUCT_ID}",
-            headers={"X-Service-Key": SERVICE_KEY},
-        )
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}")
 
     assert resp.status_code == 200
     assert 'cost_price' not in resp.json()['skus'][0]
@@ -151,10 +144,7 @@ async def test_reserved_quantity_absent_in_response(mock_db):
     mock_db.get.return_value = product
 
     async with await make_client() as client:
-        resp = await client.get(
-            f"/api/v1/products/{PRODUCT_ID}",
-            headers={"X-Service-Key": SERVICE_KEY},
-        )
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}")
 
     assert resp.status_code == 200
     assert 'reserved_quantity' not in resp.json()['skus'][0]
@@ -167,12 +157,12 @@ async def test_blocked_product_returns_404(mock_db):
     mock_db.get.return_value = product
 
     async with await make_client() as client:
-        resp = await client.get(
-            f"/api/v1/products/{PRODUCT_ID}",
-            headers={"X-Service-Key": SERVICE_KEY},
-        )
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}")
 
     assert resp.status_code == 404
+    body = resp.json()
+    assert body["code"] == 404
+    assert body["message"] == "Product not found"
 
 
 async def test_deleted_product_returns_404(mock_db):
@@ -180,24 +170,24 @@ async def test_deleted_product_returns_404(mock_db):
     mock_db.get.return_value = product
 
     async with await make_client() as client:
-        resp = await client.get(
-            f"/api/v1/products/{PRODUCT_ID}",
-            headers={"X-Service-Key": SERVICE_KEY},
-        )
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}")
 
     assert resp.status_code == 404
+    body = resp.json()
+    assert body["code"] == 404
+    assert body["message"] == "Product not found"
 
 
 async def test_nonexistent_product_returns_404(mock_db):
     mock_db.get.return_value = None
 
     async with await make_client() as client:
-        resp = await client.get(
-            f"/api/v1/products/{PRODUCT_ID}",
-            headers={"X-Service-Key": SERVICE_KEY},
-        )
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}")
 
     assert resp.status_code == 404
+    body = resp.json()
+    assert body["code"] == 404
+    assert body["message"] == "Product not found"
 
 
 async def test_sku_without_stock_is_shown_as_unavailable(mock_db):
@@ -206,12 +196,38 @@ async def test_sku_without_stock_is_shown_as_unavailable(mock_db):
     mock_db.get.return_value = product
 
     async with await make_client() as client:
-        resp = await client.get(
-            f"/api/v1/products/{PRODUCT_ID}",
-            headers={"X-Service-Key": SERVICE_KEY},
-        )
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}")
 
     assert resp.status_code == 200
-    sku = resp.json()["skus"][0]
-    assert sku["in_stock"] is False
-    assert sku["active_quantity"] == 0
+    data = resp.json()
+    assert data["has_stock"] is False
+    sku = data["skus"][0]
+    assert sku["available_quantity"] == 0
+
+
+# ── Public access (no auth) ──────────────────────────────────────────────────
+
+async def test_catalog_endpoint_accessible_without_auth(mock_db):
+    """Реальный покупатель (без всяких ключей) должен получить 200."""
+    product = make_product()
+    product.skus = [make_sku()]
+    mock_db.get.return_value = product
+
+    async with await make_client() as client:
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}")
+
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "iPhone 15 Pro Max"
+
+
+async def test_catalog_endpoint_accessible_without_headers(mock_db):
+    """Без X-Service-Key и без Authorization — всё равно работает."""
+    product = make_product()
+    product.skus = [make_sku()]
+    mock_db.get.return_value = product
+
+    async with await make_client() as client:
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}")
+
+    assert resp.status_code == 200
+    assert resp.json()["id"] == str(PRODUCT_ID)

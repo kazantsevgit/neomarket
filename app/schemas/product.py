@@ -205,3 +205,53 @@ class B2CProductResponse(BaseModel):
     status: str
     characteristics: List[B2CCharacteristic]
     skus: List[B2CSkuResponse]
+
+
+# ── Catalog (B2C по спецификации neomarket-b2c.yaml) ─────────────────────────
+
+class CatalogImageRef(BaseModel):
+    """ImageRef из спецификации — обязательные id, url, ordering."""
+    id: uuid.UUID
+    url: str
+    alt: Optional[str] = None
+    ordering: int = 0
+    is_main: bool = False
+
+
+class CatalogCategoryRef(BaseModel):
+    """CategoryRef — только доступные поля из Category."""
+    id: uuid.UUID
+    name: str
+
+
+class CatalogSku(BaseModel):
+    """CatalogSku из B2C-спецификации."""
+    id: uuid.UUID
+    name: str
+    sku_code: Optional[str] = None
+    price: int
+    old_price: Optional[int] = None
+    available_quantity: int
+    attributes: Optional[Dict[str, Any]] = None
+    images: List[CatalogImageRef] = []
+
+
+class CatalogProductCard(BaseModel):
+    """CatalogProductCard из B2C-спецификации."""
+    id: uuid.UUID
+    name: str
+    slug: str
+    category: Optional[CatalogCategoryRef] = None
+    min_price: int
+    old_price: Optional[int] = None
+    has_stock: bool
+    rating: Optional[float] = None
+    reviews_count: int = 0
+    images: List[CatalogImageRef] = []
+
+
+class CatalogProductDetail(CatalogProductCard):
+    """CatalogProductDetail = CatalogProductCard + description + skus."""
+    description: str
+    attributes: Optional[Dict[str, Any]] = None
+    skus: List[CatalogSku] = []
