@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     B2B_SERVICE_KEY: str = "dev-b2b-service-key"
     SERVICE_KEY: str = "dev-service-key"
 
+    # B2B service (called by B2C checkout)
+    B2B_URL: str = "http://b2b-service:8000"
+
     class Config:
         env_file = ".env"
 
