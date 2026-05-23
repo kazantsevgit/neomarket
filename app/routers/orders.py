@@ -2,7 +2,8 @@
 Роутер B2C Orders.
 
 Endpoints:
-  POST /api/v1/orders  — Checkout (создание заказа)
+  POST /api/v1/orders          — Checkout (создание заказа)
+  POST /api/v1/orders/{id}/cancel — Отмена заказа
 
 Аутентификация: Bearer JWT.
 user_id берётся исключительно из JWT claims (IDOR-защита).
@@ -15,6 +16,7 @@ from app.dependencies.auth import get_current_seller_id  # reuse — здесь 
 from app.dependencies.db import get_db
 from app.schemas.orders import CheckoutRequest, OrderResponse
 from app.services.order_service import create_order
+from app.services.cancel_service import cancel_order
 
 import uuid
 
@@ -38,3 +40,23 @@ async def checkout(
     существующий заказ (статус 201, тот же объект).
     """
     return await create_order(db=db, user_id=user_id, payload=body)
+
+
+@router.post(
+    "/{order_id}/cancel",
+    response_model=OrderResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def cancel(
+    order_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_seller_id),
+    db: AsyncSession = Depends(get_db),
+) -> OrderResponse:
+    """
+    POST /api/v1/orders/{id}/cancel — Отмена заказа.
+
+    Допустимые статусы: CREATED, PAID.
+    Если unreserve в B2B упал — статус CANCEL_PENDING, retry асинхронно.
+    Чужой заказ → 404 (не 403, IDOR-защита).
+    """
+    return await cancel_order(db=db, order_id=order_id, user_id=user_id)

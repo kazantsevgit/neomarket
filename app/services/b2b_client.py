@@ -113,3 +113,33 @@ async def reserve(
         raise B2BReserveFailedError(failed_items)
 
     raise B2BUnavailableError(f"B2B returned {resp.status_code}")
+
+
+async def unreserve(
+    order_id: uuid.UUID,
+    items: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    POST /api/v1/inventory/unreserve — снять резерв при отмене заказа.
+
+    Идемпотентен на стороне B2B по order_id.
+    Бросает B2BUnavailableError при таймауте или 5xx.
+    """
+    payload = {
+        "order_id": str(order_id),
+        "items": items,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{settings.B2B_URL}/api/v1/inventory/unreserve",
+                json=payload,
+                headers=_b2b_headers(),
+            )
+    except httpx.RequestError as exc:
+        raise B2BUnavailableError(str(exc)) from exc
+
+    if resp.status_code == 200:
+        return resp.json()
+
+    raise B2BUnavailableError(f"B2B returned {resp.status_code}")
