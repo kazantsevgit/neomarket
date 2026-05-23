@@ -10,6 +10,9 @@ from app.schemas.product import (
     B2CProductResponse,
     B2CSkuResponse,
     BlockingReasonDetail,
+    CatalogImageRef,
+    CatalogProductDetail,
+    CatalogSku,
     CharacteristicResponse,
     FieldReportResponse,
     ProductImageResponse,
@@ -159,4 +162,65 @@ def product_to_b2c_response(product: Product) -> B2CProductResponse:
         status=product.status.value,
         characteristics=_b2c_characteristics(product.characteristics),
         skus=[sku_to_b2c_response(sku) for sku in product.skus],
+    )
+
+
+# ── Catalog (B2C по спецификации) ───────────────────────────────────────
+
+def _catalog_product_images(images: list[dict]) -> list[CatalogImageRef]:
+    return [
+        CatalogImageRef(
+            id=uuid.UUID(img["id"]) if isinstance(img["id"], str) else img["id"],
+            url=img["url"],
+            ordering=img.get("ordering", 0),
+        )
+        for img in images
+    ]
+
+
+def _catalog_sku_images(sku: SKU) -> list[CatalogImageRef]:
+    return [
+        CatalogImageRef(
+            id=img.id,
+            url=img.url,
+            ordering=img.ordering,
+        )
+        for img in sku.images_rel
+    ]
+
+
+def sku_to_catalog_response(sku: SKU) -> CatalogSku:
+    chars = {ch.name: ch.value for ch in sku.characteristics_rel}
+    return CatalogSku(
+        id=sku.id,
+        name=sku.name,
+        sku_code=sku.article,
+        price=sku.price,
+        old_price=(sku.price + sku.discount) if sku.discount > 0 else None,
+        available_quantity=sku.active_quantity,
+        attributes=chars or None,
+        images=_catalog_sku_images(sku),
+    )
+
+
+def product_to_catalog_detail(product: Product) -> CatalogProductDetail:
+    prices = [sku.price for sku in product.skus] if product.skus else [0]
+    min_price = min(prices)
+    has_stock = any(sku.active_quantity > 0 for sku in product.skus)
+
+    chars = {
+        ch["name"]: ch["value"]
+        for ch in (product.characteristics or [])
+    } if product.characteristics else None
+
+    return CatalogProductDetail(
+        id=product.id,
+        name=product.title,
+        slug=product.slug,
+        min_price=min_price,
+        has_stock=has_stock,
+        images=_catalog_product_images(product.images),
+        description=product.description or "",
+        attributes=chars,
+        skus=[sku_to_catalog_response(sku) for sku in product.skus],
     )
