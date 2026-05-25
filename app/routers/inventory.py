@@ -14,12 +14,12 @@ from app.services.inventory_service import reserve_inventory, unreserve_inventor
 router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
 
 
-def _verify_service_key(x_service_key: str = Header(..., alias="X-Service-Key")) -> None:
-    """Простая проверка ключа межсервисного взаимодействия."""
-    if x_service_key != settings.SERVICE_KEY:
+def _verify_service_key(x_service_key: str | None = Header(None, alias="X-Service-Key")) -> None:
+    """Проверка X-Service-Key: отсутствие или неверное значение → 401."""
+    if x_service_key is None or x_service_key != settings.SERVICE_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid X-Service-Key",
+            detail={"code": "UNAUTHORIZED", "message": "Invalid or missing X-Service-Key"},
         )
 
 
