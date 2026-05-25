@@ -116,8 +116,9 @@ def _db_for_reserve(skus: list[MagicMock], idempotency_record=None) -> AsyncMock
     return db
 
 
-def _db_for_unreserve(skus: list[MagicMock]) -> AsyncMock:
+def _db_for_unreserve(skus: list[MagicMock], idem_existing=None) -> AsyncMock:
     db = AsyncMock()
+    db.get.return_value = idem_existing
     scalar_result = MagicMock()
     scalar_result.scalars.return_value.all.return_value = skus
     db.execute.return_value = scalar_result
@@ -210,6 +211,7 @@ async def test_partial_insufficient_stock_returns_409_all_rollback(override_db):
 
     assert resp.status_code == 409
     detail = resp.json()["detail"]
+    assert detail["code"] == "INSUFFICIENT_STOCK"
     assert str(SKU_ID_2) in detail["sku_ids"]
 
     # Rollback — ни один SKU не изменён
@@ -274,3 +276,42 @@ async def test_unreserve_restores_quantities(override_db):
     assert sku2.reserved_quantity == 0
 
     db.commit.assert_awaited_once()
+
+
+async def test_duplicate_sku_in_request_aggregated_correctly(override_db):
+    """
+    Один sku_id дважды в запросе — quantity суммируется.
+    Остаток 5, запрашиваем 3+3=6 → 409.
+    """
+    sku1 = make_sku(SKU_ID_1, stock_quantity=5, reserved_quantity=0)
+
+    db = _db_for_reserve([sku1])
+    app.dependency_overrides[get_db] = lambda: db
+
+    body = {
+        "idempotency_key": str(uuid.uuid4()),
+        "order_id": str(uuid.uuid4()),
+        "items": [
+            {"sku_id": str(SKU_ID_1), "quantity": 3},
+            {"sku_id": str(SKU_ID_1), "quantity": 3},
+        ],
+    }
+
+    async with await make_client() as client:
+        resp = await client.post(
+            "/api/v1/inventory/reserve",
+            json=body,
+            headers=SERVICE_KEY_HEADER,
+        )
+
+    assert resp.status_code == 409
+    detail = resp.json()["detail"]
+    assert detail["code"] == "INSUFFICIENT_STOCK"
+    assert str(SKU_ID_1) in detail["sku_ids"]
+    assert sku1.reserved_quantity == 0
+    db.commit.assert_not_awaited()
+
+
+async def test_idempotent_unreserve_is_noop(override_db):
+    """Повторный unreserve с тем же order_id → 200 без изменений."""
+    sku1 = make_sku(SKU_ID_1, stock_quantity=10, reserved_quantity=0)
