@@ -5,6 +5,7 @@ import uuid
 from app.dependencies.auth import get_current_seller_id
 from app.dependencies.db import get_db
 from app.schemas.product import SKUCreate, SKUResponse
+from app.services.product_presenter import sku_to_seller_response
 from app.services.sku_service import add_sku
 
 router = APIRouter(prefix="/api/v1/skus", tags=["skus"])
@@ -17,4 +18,4 @@ async def create_sku_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> SKUResponse:
     sku = await add_sku(db=db, data=body, seller_id=seller_id)
-    return SKUResponse.model_validate(sku)
+    return sku_to_seller_response(sku)
