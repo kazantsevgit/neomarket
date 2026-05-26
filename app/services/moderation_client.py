@@ -21,6 +21,7 @@ ADR (выбор способа доставки события):
 import asyncio
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -59,6 +60,7 @@ def emit_product_created(
     title: str,
     sku_id: uuid.UUID,
     price: int,
+    occurred_at: datetime | None = None,
 ) -> None:
     """
     Отправляет событие CREATED в Moderation (fire-and-forget).
@@ -72,9 +74,11 @@ def emit_product_created(
     Примечание: product_id=None vs seller_id=None — оба случая объединены
     в 404, чтобы не раскрывать чужие product_id (IDOR-защита).
     """
+    ts = occurred_at or datetime.now(timezone.utc)
     payload = {
         "event_type": "CREATED",
         "idempotency_key": str(product_id),
+        "occurred_at": ts.isoformat(),
         "product_id": str(product_id),
         "seller_id": str(seller_id),
         "category_id": str(category_id),
