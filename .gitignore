@@ -18,3 +18,4 @@ venv/
 # Ruff/mypy
 .ruff_cache/
 .mypy_cache/
+/.env
