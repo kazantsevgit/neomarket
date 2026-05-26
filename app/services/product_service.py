@@ -10,8 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.category import Category
 from app.models.product import Product, ProductStatus, SKU
-from app.schemas.product import ProductCreate, ProductImageCreate
-from app.schemas.product import ProductUpdate
+from app.schemas.product import Characteristic, ProductCreate, ProductImageCreate, ProductUpdate
 
 
 
@@ -21,10 +20,10 @@ def _slugify(title: str) -> str:
     return slug or "product"
 
 
-def _attributes_to_characteristics(attributes: dict[str, Any]) -> list[dict[str, Any]]:
+def _characteristics_to_storage(characteristics: list[Characteristic]) -> list[dict[str, Any]]:
     return [
-        {"id": str(uuid.uuid4()), "name": name, "value": str(value)}
-        for name, value in attributes.items()
+        {"id": str(uuid.uuid4()), "name": ch.name, "value": ch.value}
+        for ch in characteristics
     ]
 
 
@@ -55,7 +54,7 @@ async def create_product(
         slug=_slugify(data.title),
         description=data.description,
         category_id=data.category_id,
-        characteristics=_attributes_to_characteristics(data.attributes or {}),
+        characteristics=_characteristics_to_storage(data.characteristics),
         images=_images_to_storage(data.images),
         status=ProductStatus.CREATED,
         deleted=False,
@@ -118,7 +117,7 @@ async def update_product(
     product.slug = _slugify(data.title)
     product.description = data.description
     product.category_id = data.category_id
-    product.characteristics = _attributes_to_characteristics(data.attributes or {})
+    product.characteristics = _characteristics_to_storage(data.characteristics)
     product.images = _images_to_storage(data.images)
     product.updated_at = datetime.now(timezone.utc)
 
