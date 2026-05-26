@@ -1,12 +1,31 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.models.product import Product, ProductStatus, SKU, SKUImage, SKUCharacteristic
+from app.models import product as product_models
 from app.schemas.product import SKUCreate
 from app.services.moderation_client import emit_product_created
+
+Product = product_models.Product
+ProductStatus = product_models.ProductStatus
+SKU = product_models.SKU
+SKUImage = product_models.SKUImage
+SKUCharacteristic = product_models.SKUCharacteristic
+
+
+async def _reload_sku_with_relations(db: AsyncSession, sku_id: uuid.UUID) -> SKU:
+    result = await db.execute(
+        select(SKU)
+        .where(SKU.id == sku_id)
+        .options(
+            selectinload(SKU.images_rel),
+            selectinload(SKU.characteristics_rel),
+        )
+    )
+    return result.scalar_one()
 
 
 async def add_sku(
@@ -33,6 +52,9 @@ async def add_sku(
         select(func.count()).where(SKU.product_id == product.id)
     )
     is_first_sku = existing_count_result.scalar_one() == 0
+    should_send_to_moderation = (
+        is_first_sku and product.status == ProductStatus.CREATED
+    )
 
     # 4. Создаём SKU
     sku = SKU(
@@ -48,20 +70,20 @@ async def add_sku(
 
     # 5. Изображения и характеристики (дочерние строки)
     for img in data.images:
-        db.add(SKUImage(sku_id=sku.id, url=img.url, ordering=img.ordering))
+        sku.images_rel.append(SKUImage(url=img.url, ordering=img.ordering))
 
     for ch in data.characteristics:
-        db.add(SKUCharacteristic(sku_id=sku.id, name=ch.name, value=ch.value))
+        sku.characteristics_rel.append(SKUCharacteristic(name=ch.name, value=ch.value))
 
-    # 6. Первый SKU → переводим товар в ON_MODERATION
-    if is_first_sku:
+    # 6. Первый SKU при статусе CREATED → ON_MODERATION (канон B2B-2)
+    if should_send_to_moderation:
         product.status = ProductStatus.ON_MODERATION
 
     await db.commit()
-    await db.refresh(sku)
+    sku = await _reload_sku_with_relations(db, sku.id)
 
-    # 7. Событие в Moderation — только при первом SKU
-    if is_first_sku:
+    # 7. Событие в Moderation — только при первом SKU и статусе CREATED
+    if should_send_to_moderation:
         emit_product_created(
             product_id=product.id,
             seller_id=product.seller_id,
