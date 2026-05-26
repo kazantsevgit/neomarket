@@ -105,9 +105,9 @@ class SKUPublicResponse(BaseModel):
 
 class ProductCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
+    description: str = Field(..., min_length=1, max_length=5000)
     category_id: uuid.UUID
-    attributes: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    characteristics: List[Characteristic] = Field(default_factory=list)
     images: List[ProductImageCreate] = Field(..., min_length=1)
 
     @field_validator("images")
@@ -121,9 +121,9 @@ class ProductCreate(BaseModel):
 class ProductUpdate(BaseModel):
     """Схема для обновления товара (PATCH /products/{id})."""
     title: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
+    description: str = Field(..., min_length=1, max_length=5000)
     category_id: uuid.UUID
-    attributes: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    characteristics: List[Characteristic] = Field(default_factory=list)
     images: List[ProductImageCreate] = Field(..., min_length=1)
 
     @field_validator("images")
