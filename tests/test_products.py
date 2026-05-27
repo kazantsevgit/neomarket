@@ -16,7 +16,7 @@ VALID_BODY = {
     "title": "Test Product",
     "description": "Some description",
     "category_id": str(CATEGORY_ID),
-    "attributes": {"color": "red"},
+    "characteristics": [{"name": "color", "value": "red"}],
     "images": [{"url": "https://cdn.example.com/img1.jpg", "ordering": 0}],
 }
 

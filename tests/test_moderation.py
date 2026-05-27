@@ -272,7 +272,8 @@ async def test_missing_service_key_returns_401(override_db):
             # Без SERVICE_KEY_HEADER
         )
 
-    assert resp.status_code == 422  # FastAPI validation error: missing required header
+    assert resp.status_code == 401
+    assert resp.json()["detail"]["code"] == "UNAUTHORIZED"
 
 
 async def test_wrong_service_key_returns_401(override_db):
@@ -292,7 +293,7 @@ async def test_wrong_service_key_returns_401(override_db):
         )
 
     assert resp.status_code == 401
-    assert "Invalid X-Service-Key" in resp.json()["detail"]
+    assert resp.json()["detail"]["code"] == "UNAUTHORIZED"
 
 
 # ─── Additional test: HARD_BLOCKED защита ────────────────────────────────────
@@ -300,15 +301,83 @@ async def test_wrong_service_key_returns_401(override_db):
 # Пока оставляю как документацию требования DoD
 
 
-async def test_hard_blocked_product_rejects_seller_edits():
-    """
-    DoD: hard_blocked_product_rejects_seller_edits
-    PUT/DELETE от продавца на HARD_BLOCKED товар → 403.
+async def test_hard_blocked_product_rejects_seller_edits_put(override_db):
+    """PUT на HARD_BLOCKED товар → 403."""
+    from app.dependencies.auth import get_current_seller_id
+    SELLER_ID = uuid.uuid4()
+    app.dependency_overrides[get_current_seller_id] = lambda: SELLER_ID
 
-    Этот тест требует интеграции с существующим роутером products.
-    Проверка должна быть в product_service.py перед любым изменением:
-    if product.status == ProductStatus.HARD_BLOCKED:
-        raise HTTPException(403, "Cannot modify HARD_BLOCKED product")
-    """
-    # TODO: интеграционный тест с реальным PUT /api/v1/products/{id}
-    pass
+    product = make_product(status=ProductStatus.HARD_BLOCKED)
+    product.seller_id = SELLER_ID
+
+    db = AsyncMock()
+    db.get.return_value = product
+    app.dependency_overrides[get_db] = lambda: db
+
+    update_body = {
+        "title": "New title",
+        "description": "New description",
+        "category_id": str(uuid.uuid4()),
+        "characteristics": [],
+        "images": [{"url": "https://cdn.example.com/img.jpg", "ordering": 0}],
+    }
+
+    async with await make_client() as client:
+        resp = await client.put(
+            f"/api/v1/products/{PRODUCT_ID}",
+            json=update_body,
+            headers={"Authorization": "Bearer token"},
+        )
+
+    app.dependency_overrides.pop(get_current_seller_id, None)
+    assert resp.status_code == 403
+
+
+async def test_hard_blocked_product_rejects_seller_edits_delete(override_db):
+    """DELETE на HARD_BLOCKED товар → 403."""
+    from app.dependencies.auth import get_current_seller_id
+    SELLER_ID = uuid.uuid4()
+    app.dependency_overrides[get_current_seller_id] = lambda: SELLER_ID
+
+    product = make_product(status=ProductStatus.HARD_BLOCKED)
+    product.seller_id = SELLER_ID
+
+    db = AsyncMock()
+    db.get.return_value = product
+    app.dependency_overrides[get_db] = lambda: db
+
+    async with await make_client() as client:
+        resp = await client.delete(
+            f"/api/v1/products/{PRODUCT_ID}",
+            headers={"Authorization": "Bearer token"},
+        )
+
+    app.dependency_overrides.pop(get_current_seller_id, None)
+    assert resp.status_code == 403
+
+
+async def test_hard_blocked_product_ignores_new_moderation_event(override_db):
+    """HARD_BLOCKED товар игнорирует новые события модерации с другим ключом."""
+    product = make_product(status=ProductStatus.HARD_BLOCKED)
+
+    db = _db_for_event(product, idempotency_record=None)
+    app.dependency_overrides[get_db] = lambda: db
+
+    event = {
+        "idempotency_key": str(uuid.uuid4()),  # новый ключ — не дубль
+        "product_id": str(PRODUCT_ID),
+        "occurred_at": _NOW.isoformat(),
+        "event_type": "MODERATED",
+        "moderator_comment": "Attempt to unblock",
+    }
+
+    async with await make_client() as client:
+        resp = await client.post(
+            "/api/v1/moderation/events",
+            json=event,
+            headers=SERVICE_KEY_HEADER,
+        )
+
+    assert resp.status_code == 204
+    # Статус не изменился
+    assert product.status == ProductStatus.HARD_BLOCKED

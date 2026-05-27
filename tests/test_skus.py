@@ -23,7 +23,8 @@ from httpx import AsyncClient, ASGITransport
 from app.main import app
 from app.dependencies.auth import get_current_seller_id
 from app.dependencies.db import get_db
-from app.models.product import Product, ProductStatus, SKU
+from app.models.product import Product, ProductStatus, SKU, SKUCharacteristic, SKUImage
+from app.services.product_presenter import sku_to_seller_response
  
 # ─── Константы ───────────────────────────────────────────────────────────────
  
@@ -69,11 +70,46 @@ def make_sku() -> MagicMock:
     s.stock_quantity    = 0
     s.reserved_quantity = 0
     s.active_quantity   = 0
-    s.images            = []
-    s.characteristics   = []
+    s.images_rel        = []
+    s.characteristics_rel = []
     s.created_at        = _NOW
     s.updated_at        = _NOW
     return s
+
+
+def build_real_sku() -> SKU:
+    """Реальный ORM-объект SKU с images_rel / characteristics_rel (не MagicMock)."""
+    sku_id = uuid.uuid4()
+    sku = SKU(
+        id=sku_id,
+        product_id=PRODUCT_ID,
+        name="Красный M",
+        price=99900,
+        discount=0,
+        cost_price=None,
+        article=None,
+        stock_quantity=0,
+        reserved_quantity=0,
+        created_at=_NOW,
+        updated_at=_NOW,
+    )
+    sku.images_rel = [
+        SKUImage(
+            id=uuid.uuid4(),
+            sku_id=sku_id,
+            url="https://cdn.example.com/sku1.jpg",
+            ordering=0,
+        )
+    ]
+    sku.characteristics_rel = [
+        SKUCharacteristic(
+            id=uuid.uuid4(),
+            sku_id=sku_id,
+            name="Размер",
+            value="M",
+        )
+    ]
+    return sku
  
  
 # ─── Фикстуры ────────────────────────────────────────────────────────────────
@@ -113,8 +149,47 @@ def _db_with_product(product: MagicMock, existing_skus: int = 0) -> AsyncMock:
     return db
  
  
+# ─── Сериализация ORM → SKUResponse ──────────────────────────────────────────
+
+def test_sku_to_seller_response_serializes_real_orm_model():
+    """Реальный SKU (images_rel / characteristics_rel) → валидный SKUResponse."""
+    sku = build_real_sku()
+    response = sku_to_seller_response(sku)
+
+    assert response.id == sku.id
+    assert len(response.images) == 1
+    assert response.images[0].url == "https://cdn.example.com/sku1.jpg"
+    assert response.images[0].ordering == 0
+    assert response.images[0].id is not None
+    assert len(response.characteristics) == 1
+    assert response.characteristics[0].name == "Размер"
+    assert response.characteristics[0].value == "M"
+    assert response.characteristics[0].id is not None
+    assert response.active_quantity == 0
+
+
+async def test_post_sku_returns_201_with_real_orm_serialization(auth_headers):
+    """POST /api/v1/skus: ответ 201 сериализует реальный ORM-объект, не MagicMock."""
+    sku = build_real_sku()
+
+    with patch("app.routers.skus.add_sku", new_callable=AsyncMock, return_value=sku):
+        async with await make_client() as client:
+            resp = await client.post("/api/v1/skus", json=VALID_SKU_BODY, headers=auth_headers)
+
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["id"] == str(sku.id)
+    assert len(data["images"]) == 1
+    assert data["images"][0]["url"] == "https://cdn.example.com/sku1.jpg"
+    assert "id" in data["images"][0]
+    assert len(data["characteristics"]) == 1
+    assert data["characteristics"][0]["name"] == "Размер"
+    assert data["characteristics"][0]["value"] == "M"
+    assert "id" in data["characteristics"][0]
+
+
 # ─── Happy path ───────────────────────────────────────────────────────────────
- 
+
 async def test_first_sku_transitions_product_to_on_moderation(auth_headers):
     """
     Блокер 4: тест вызывает РЕАЛЬНЫЙ add_sku (без patch на роутер).
@@ -130,14 +205,12 @@ async def test_first_sku_transitions_product_to_on_moderation(auth_headers):
  
     app.dependency_overrides[get_db] = lambda: db
  
-    with patch("app.services.sku_service.SKU", return_value=sku), \
-         patch("app.services.sku_service.SKUImage"), \
-         patch("app.services.sku_service.SKUCharacteristic"), \
+    with patch("app.services.sku_service._reload_sku_with_relations", new_callable=AsyncMock, return_value=sku), \
          patch("app.services.sku_service.emit_product_created"):
- 
+
         async with await make_client() as client:
             resp = await client.post("/api/v1/skus", json=VALID_SKU_BODY, headers=auth_headers)
- 
+
     assert resp.status_code == 201
     # Ключевой инвариант: статус изменён внутри add_sku
     assert product.status == ProductStatus.ON_MODERATION
@@ -152,14 +225,12 @@ async def test_first_sku_emits_created_event_to_moderation(auth_headers):
     db.refresh.side_effect = lambda obj: None
     app.dependency_overrides[get_db] = lambda: db
  
-    with patch("app.services.sku_service.SKU", return_value=sku), \
-         patch("app.services.sku_service.SKUImage"), \
-         patch("app.services.sku_service.SKUCharacteristic"), \
+    with patch("app.services.sku_service._reload_sku_with_relations", new_callable=AsyncMock, return_value=sku), \
          patch("app.services.sku_service.emit_product_created") as mock_emit:
- 
+
         async with await make_client() as client:
             resp = await client.post("/api/v1/skus", json=VALID_SKU_BODY, headers=auth_headers)
- 
+
     assert resp.status_code == 201
     mock_emit.assert_called_once_with(
         product_id=product.id,
@@ -171,6 +242,26 @@ async def test_first_sku_emits_created_event_to_moderation(auth_headers):
     )
  
  
+async def test_first_sku_on_non_created_product_no_moderation(auth_headers):
+    """Первый SKU при статусе != CREATED не переводит товар и не шлёт событие."""
+    product = make_product(ProductStatus.REJECTED)
+    sku = make_sku()
+
+    db = _db_with_product(product, existing_skus=0)
+    db.refresh.side_effect = lambda obj: None
+    app.dependency_overrides[get_db] = lambda: db
+
+    with patch("app.services.sku_service._reload_sku_with_relations", new_callable=AsyncMock, return_value=sku), \
+         patch("app.services.sku_service.emit_product_created") as mock_emit:
+
+        async with await make_client() as client:
+            resp = await client.post("/api/v1/skus", json=VALID_SKU_BODY, headers=auth_headers)
+
+    assert resp.status_code == 201
+    assert product.status == ProductStatus.REJECTED
+    mock_emit.assert_not_called()
+
+
 async def test_second_sku_no_state_change(auth_headers):
     """Второй SKU не меняет статус и не отправляет событие."""
     product = make_product(ProductStatus.ON_MODERATION)
@@ -180,14 +271,12 @@ async def test_second_sku_no_state_change(auth_headers):
     db.refresh.side_effect = lambda obj: None
     app.dependency_overrides[get_db] = lambda: db
  
-    with patch("app.services.sku_service.SKU", return_value=sku), \
-         patch("app.services.sku_service.SKUImage"), \
-         patch("app.services.sku_service.SKUCharacteristic"), \
+    with patch("app.services.sku_service._reload_sku_with_relations", new_callable=AsyncMock, return_value=sku), \
          patch("app.services.sku_service.emit_product_created") as mock_emit:
- 
+
         async with await make_client() as client:
             resp = await client.post("/api/v1/skus", json=VALID_SKU_BODY, headers=auth_headers)
- 
+
     assert resp.status_code == 201
     mock_emit.assert_not_called()
     assert product.status == ProductStatus.ON_MODERATION   # без изменений
@@ -249,9 +338,7 @@ async def test_missing_images_field_returns_422(auth_headers):
     db.refresh.side_effect = lambda obj: None
     app.dependency_overrides[get_db] = lambda: db
  
-    with patch("app.services.sku_service.SKU", return_value=sku), \
-         patch("app.services.sku_service.SKUImage"), \
-         patch("app.services.sku_service.SKUCharacteristic"), \
+    with patch("app.services.sku_service._reload_sku_with_relations", new_callable=AsyncMock, return_value=sku), \
          patch("app.services.sku_service.emit_product_created"):
         async with await make_client() as client:
             resp = await client.post("/api/v1/skus", json=body, headers=auth_headers)

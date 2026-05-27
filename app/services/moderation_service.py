@@ -17,13 +17,17 @@ ADR (для PR):
   - Сложность поддержки: минимальна — отдельная таблица проще тестировать и
     мониторить, TTL-чистка не затрагивает таблицу Product.
 """
+import asyncio
 import logging
 import uuid
 from typing import Optional
 
+import httpx
+
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.moderation_event import ModerationEventIdempotency
 from app.models.product import Product, ProductStatus
 from app.schemas.moderation import FieldReport, ModerationEventRequest, ModerationEventType
@@ -31,12 +35,23 @@ from app.schemas.moderation import FieldReport, ModerationEventRequest, Moderati
 logger = logging.getLogger(__name__)
 
 
+async def _send_product_blocked(product_id: uuid.UUID) -> None:
+    """Реальная отправка PRODUCT_BLOCKED в B2C (fire-and-forget)."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                f"{settings.B2C_URL}/api/v1/b2b/events",
+                json={"event_type": "PRODUCT_BLOCKED", "product_id": str(product_id)},
+                headers={"X-Service-Key": settings.B2C_SERVICE_KEY},
+            )
+        logger.info("PRODUCT_BLOCKED sent product_id=%s", product_id)
+    except Exception as exc:
+        logger.error("failed to send PRODUCT_BLOCKED product_id=%s: %s", product_id, exc)
+
+
 def emit_product_blocked_to_b2c(product_id: uuid.UUID) -> None:
-    """
-    Заглушка — каскадное событие PRODUCT_BLOCKED в B2C.
-    В production здесь HTTP/gRPC вызов или публикация в очередь.
-    """
-    pass  # pragma: no cover
+    """Fire-and-forget каскадное событие в B2C."""
+    asyncio.create_task(_send_product_blocked(product_id))
 
 
 async def apply_moderation_decision(
@@ -73,7 +88,21 @@ async def apply_moderation_decision(
             detail="Product not found",
         )
 
-    # ── 3. Применяем решение ──────────────────────────────────────────────────
+    # ── 3. Защита HARD_BLOCKED (терминальный статус) ─────────────────────────
+    if product.status == ProductStatus.HARD_BLOCKED:
+        logger.warning(
+            "ignoring moderation event for HARD_BLOCKED product_id=%s", payload.product_id
+        )
+        # Сохраняем запись чтобы не штурмовали повторными попытками
+        db.add(ModerationEventIdempotency(
+            idempotency_key=payload.idempotency_key,
+            product_id=payload.product_id,
+            event_type=payload.event_type.value,
+        ))
+        await db.commit()
+        return
+
+    # ── 4. Применяем решение ──────────────────────────────────────────────────
     if payload.event_type == ModerationEventType.MODERATED:
         product.status = ProductStatus.MODERATED
         product.blocking_reason_id = None
@@ -106,7 +135,7 @@ async def apply_moderation_decision(
         # Каскадное событие в B2C
         emit_product_blocked_to_b2c(product.id)
 
-    # ── 4. Сохраняем idempotency-запись ──────────────────────────────────────
+    # ── 5. Сохраняем idempotency-запись ──────────────────────────────────────
     db.add(
         ModerationEventIdempotency(
             idempotency_key=payload.idempotency_key,

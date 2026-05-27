@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import Select, func, or_, select, text
+from sqlalchemy import Select, and_, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,42 @@ from app.schemas.catalog import (
 )
 from app.schemas.errors import VALID_SORTS, invalid_request, invalid_sort_error
 
+# ========== from main ==========
+_CATALOG_LOAD_OPTIONS = [
+    selectinload(Product.skus).selectinload(SKU.images_rel),
+    selectinload(Product.skus).selectinload(SKU.characteristics_rel),
+]
+
+_HAS_IN_STOCK_SKU = exists(
+    select(SKU.id).where(
+        SKU.product_id == Product.id,
+        SKU.stock_quantity > SKU.reserved_quantity,
+    )
+)
+
+
+def _sku_active_quantity(sku: SKU) -> int:
+    """Вычисление доступного количества (не забронированного)."""
+    return max(0, sku.stock_quantity - sku.reserved_quantity)
+
+
+def is_catalog_visible(product: Product) -> bool:
+    """Правила видимости B2B-7 (для тестов и согласованности с SQL-фильтром)."""
+    if product.deleted or product.status != ProductStatus.MODERATED:
+        return False
+    return any(_sku_active_quantity(sku) > 0 for sku in product.skus)
+
+
+def _catalog_base_conditions():
+    """Базовые условия фильтрации каталога (используются в main)."""
+    return and_(
+        Product.status == ProductStatus.MODERATED,
+        Product.deleted.is_(False),
+        _HAS_IN_STOCK_SKU,
+    )
+
+
+# ========== from b2c-catalog-b2c-1 ==========
 # slug фильтра (canon filters[brand]) → имя характеристики в seed-данных
 _FILTER_NAME_ALIASES: dict[str, str] = {
     "brand": "бренд",
@@ -68,19 +104,8 @@ def _characteristic_match_sql(key: str, value: str):
     ).bindparams(**params)
 
 
-def _in_stock_sku_exists():
-    return (
-        select(SKU.id)
-        .where(
-            SKU.product_id == Product.id,
-            SKU.stock_quantity > SKU.reserved_quantity,
-        )
-        .correlate(Product)
-        .exists()
-    )
-
-
 def _sku_price_subquery():
+    """Подзапрос для получения минимальной цены и максимальной скидки по SKU."""
     return (
         select(
             SKU.product_id.label("product_id"),
@@ -114,11 +139,12 @@ def _apply_sort(stmt: Select, sort: str, price_sq) -> Select:
 
 
 def _cover_image(product: Product) -> str | None:
+    """Определение URL обложки товара (главное изображение)."""
     if product.images:
         first = min(product.images, key=lambda img: img.get("ordering", 0))
         return first.get("url")
     for sku in product.skus:
-        if sku.images_rel and sku.active_quantity > 0:
+        if sku.images_rel and _sku_active_quantity(sku) > 0:
             return min(sku.images_rel, key=lambda img: img.ordering).url
     return None
 
@@ -131,15 +157,13 @@ def _build_base_stmt(
     min_price: int | None,
     max_price: int | None,
 ) -> tuple[Select, Any]:
+    """Построение базового запроса для списка товаров (с фильтрацией, но без сортировки/пагинации)."""
     price_sq = _sku_price_subquery()
+    # используем базовые условия из main (они включают _HAS_IN_STOCK_SKU)
     stmt = (
         select(Product, price_sq.c.min_price)
         .join(price_sq, Product.id == price_sq.c.product_id)
-        .where(
-            Product.status == ProductStatus.MODERATED,
-            Product.deleted.is_(False),
-            _in_stock_sku_exists(),
-        )
+        .where(*_catalog_base_conditions().clauses)  # распаковка AND-условий
         .options(selectinload(Product.skus).selectinload(SKU.images_rel))
     )
 
@@ -182,6 +206,7 @@ async def list_catalog_products(
     min_price: int | None = None,
     max_price: int | None = None,
 ) -> ProductShortListResponse:
+    """Основной метод получения списка товаров для B2C-каталога (фильтры, сортировка, пагинация)."""
     if search is not None:
         if len(search) < 3:
             raise invalid_request("Search query must be at least 3 characters")
@@ -213,8 +238,8 @@ async def list_catalog_products(
             title=product.title,
             image=_cover_image(product),
             price=int(min_price_val),
-            in_stock=True,
-            is_in_cart=False,
+            in_stock=True,  # всегда true, т.к. товары с наличием уже отфильтрованы
+            is_in_cart=False,  # будет заполнено выше (корзина) — пока заглушка
         )
         for product, min_price_val in rows
     ]
@@ -236,6 +261,7 @@ async def get_catalog_facets(
     min_price: int | None = None,
     max_price: int | None = None,
 ) -> FacetsResponse:
+    """Получение фасетов (группированных характеристик с количеством) для текущего набора фильтров."""
     parsed_filters = _parse_filters(filters)
     stmt, _ = _build_base_stmt(
         category_id=category_id,

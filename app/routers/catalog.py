@@ -1,16 +1,23 @@
 """
-B2C-1: каталог с фильтрами и фасетами.
+B2C-01: каталог с фильтрами и фасетами.
 Покупательские endpoints проксируют B2B public API через X-Service-Key.
+
+B2C-03: карточка товара для покупателя
 """
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.dependencies.db import get_db
 from app.dependencies.filters import parse_filters_query
+from app.models.product import Product, ProductStatus
 from app.schemas.catalog import FacetsResponse, ProductShortListResponse
 from app.schemas.errors import VALID_SORTS, invalid_sort_error
 from app.services import b2b_client
+from app.services.product_presenter import product_to_catalog_detail
 
 router = APIRouter(prefix="/api/v1", tags=["Catalog"])
 
@@ -54,3 +61,24 @@ async def get_catalog_facets(
         search=search,
         filters=filters,
     )
+
+
+@router.get("/catalog/products/{product_id}", summary="Карточка товара (публичная)")
+async def get_catalog_product(
+    product_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    product = await db.get(Product, product_id)
+    if product is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"code": 404, "message": "Product not found"},
+        )
+
+    if product.deleted or product.status not in (ProductStatus.MODERATED, ProductStatus.PUBLISHED):
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"code": 404, "message": "Product not found"},
+        )
+
+    return product_to_catalog_detail(product)
