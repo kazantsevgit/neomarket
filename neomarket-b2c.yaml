@@ -1186,6 +1186,10 @@ components:
         is_available:
           type: boolean
           description: false если товар BLOCKED/удалён/нет остатка
+        unavailable_reason:
+          type: string
+          nullable: true
+          description: Причина недоступности позиции (вычисляется из данных B2B)
         image:
           $ref: "#/components/schemas/ImageRef"
 
