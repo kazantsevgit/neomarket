@@ -32,7 +32,6 @@ def _issue_jwt(*, user_id: uuid.UUID, ttl_seconds: int) -> str:
     now = _utcnow()
     payload = {
         "sub": str(user_id),
-        # role в проекте сейчас нигде не валидируется, но канон auth-flows его описывает.
         "role": "buyer",
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=ttl_seconds)).timestamp()),
@@ -48,7 +47,6 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     # Минимальная реализация без БД пользователей:
-    # фиксируем user_id детерминированно по email, чтобы тестам было проще.
     user_id = uuid.uuid5(uuid.NAMESPACE_DNS, body.email.lower())
 
     # Merge гостевой корзины в пользовательскую — строго как в OpenAPI и каноне.

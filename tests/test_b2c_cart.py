@@ -202,7 +202,12 @@ async def test_guest_cart_merged_on_login(override_db):
     result_after_merge.scalars.return_value = scalar_proxy_after
 
     override_db.execute = AsyncMock(
-        side_effect=[result_guest_list, result_auth_list, result_after_merge]
+        side_effect=[
+            result_guest_list,   # merge: guest items
+            result_auth_list,    # merge: auth items
+            result_after_merge,  # merge: get_cart_enriched inside login
+            result_after_merge,  # explicit GET /cart after login
+        ]
     )
     override_db.delete = AsyncMock()
 

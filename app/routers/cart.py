@@ -5,7 +5,7 @@ B2C Cart router: US-CART-03
 from __future__ import annotations
 
 import uuid
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 
@@ -93,15 +93,15 @@ async def delete_item(
     return await cart_service.delete_cart_item(db, user_id=user_id, session_id=session_id, sku_id=sku_id)
 
 
-@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("")
 async def clear_cart(
     user_id: uuid.UUID | None = Depends(get_optional_current_seller_id),
     x_session_id: uuid.UUID | None = Header(None, alias="X-Session-Id"),
     db: AsyncSession = Depends(get_db),
-) -> None:
+) -> Response:
     user_id, session_id = _resolve_identity(user_id, x_session_id)
     await cart_service.clear_cart(db, user_id=user_id, session_id=session_id)
-    return None
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/validate", response_model=CartValidationResponse)
