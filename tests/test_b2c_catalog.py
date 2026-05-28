@@ -125,7 +125,7 @@ async def test_facets_return_counts_per_filter_value(mock_db):
 
 async def test_invalid_sort_returns_400():
     async with await make_client() as client:
-        resp = await client.get("/api/v1/products", params={"sort": "not_a_sort"})
+        resp = await client.get("/api/v1/catalog/products", params={"sort": "not_a_sort"})
 
     assert resp.status_code == 400
     body = resp.json()["detail"]
@@ -143,7 +143,7 @@ async def test_b2b_unavailable_returns_502():
             client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
             client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
             resp = await client.get(
-                "/api/v1/products",
+                "/api/v1/catalog/products",
                 params={"category_id": str(CATEGORY_ID), "sort": "rating"},
             )
 
@@ -166,7 +166,7 @@ async def test_b2c_proxy_returns_b2b_payload():
             return_value=payload,
         ) as mocked:
             resp = await client.get(
-                "/api/v1/products",
+                "/api/v1/catalog/products",
                 params={"category_id": str(CATEGORY_ID), "sort": "rating"},
             )
 
