@@ -30,7 +30,7 @@ def _validate_sort_param(sort: str | None) -> str | None:
     return sort
 
 
-@router.get("/products", response_model=ProductShortListResponse)
+@router.get("/catalog/products", response_model=ProductShortListResponse)
 async def list_products(
     category_id: uuid.UUID | None = None,
     search: str | None = None,
