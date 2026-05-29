@@ -116,12 +116,35 @@ def _db_for_reserve(skus: list[MagicMock], idempotency_record=None) -> AsyncMock
     return db
 
 
-def _db_for_unreserve(skus: list[MagicMock], idem_existing=None) -> AsyncMock:
+def _make_reserve_op(sku_id: uuid.UUID, quantity: int) -> MagicMock:
+    op = MagicMock()
+    op.sku_id    = sku_id
+    op.quantity  = quantity
+    op.order_id  = ORDER_ID
+    return op
+
+
+def _db_for_unreserve(
+    skus: list[MagicMock],
+    idem_existing=None,
+    ops: list | None = None,
+) -> AsyncMock:
+    """
+    ops=None → нет ReserveOperation (резерв не был создан) → 404
+    ops=[]   → пустой список (тот же эффект)
+    ops=[…]  → список операций для верификации
+    """
     db = AsyncMock()
     db.get.return_value = idem_existing
-    scalar_result = MagicMock()
-    scalar_result.scalars.return_value.all.return_value = skus
-    db.execute.return_value = scalar_result
+
+    # execute вызывается дважды: для ReserveOperation и для SKU
+    ops_result = MagicMock()
+    ops_result.scalars.return_value.all.return_value = ops if ops is not None else []
+
+    sku_result = MagicMock()
+    sku_result.scalars.return_value.all.return_value = skus
+
+    db.execute.side_effect = [ops_result, sku_result]
     return db
 
 
@@ -210,9 +233,9 @@ async def test_partial_insufficient_stock_returns_409_all_rollback(override_db):
         )
 
     assert resp.status_code == 409
-    detail = resp.json()["detail"]
-    assert detail["code"] == "INSUFFICIENT_STOCK"
-    assert str(SKU_ID_2) in detail["sku_ids"]
+    body = resp.json()
+    assert body["code"] == "INSUFFICIENT_STOCK"
+    assert str(SKU_ID_2) in body["details"]["sku_ids"]
 
     # Rollback — ни один SKU не изменён
     assert sku1.reserved_quantity == 0
@@ -256,7 +279,11 @@ async def test_unreserve_restores_quantities(override_db):
     sku1 = make_sku(SKU_ID_1, stock_quantity=10, reserved_quantity=2)
     sku2 = make_sku(SKU_ID_2, stock_quantity=5,  reserved_quantity=1)
 
-    db = _db_for_unreserve([sku1, sku2])
+    ops = [
+        _make_reserve_op(SKU_ID_1, quantity=2),
+        _make_reserve_op(SKU_ID_2, quantity=1),
+    ]
+    db = _db_for_unreserve([sku1, sku2], ops=ops)
     app.dependency_overrides[get_db] = lambda: db
 
     async with await make_client() as client:
@@ -271,7 +298,7 @@ async def test_unreserve_restores_quantities(override_db):
     assert data["status"] == "UNRESERVED"
     assert data["order_id"] == str(ORDER_ID)
 
-    # Резерв снят
+    # Резерв снят ровно на зарезервированное количество
     assert sku1.reserved_quantity == 0
     assert sku2.reserved_quantity == 0
 
@@ -305,9 +332,9 @@ async def test_duplicate_sku_in_request_aggregated_correctly(override_db):
         )
 
     assert resp.status_code == 409
-    detail = resp.json()["detail"]
-    assert detail["code"] == "INSUFFICIENT_STOCK"
-    assert str(SKU_ID_1) in detail["sku_ids"]
+    body = resp.json()
+    assert body["code"] == "INSUFFICIENT_STOCK"
+    assert str(SKU_ID_1) in body["details"]["sku_ids"]
     assert sku1.reserved_quantity == 0
     db.commit.assert_not_awaited()
 
@@ -315,3 +342,34 @@ async def test_duplicate_sku_in_request_aggregated_correctly(override_db):
 async def test_idempotent_unreserve_is_noop(override_db):
     """Повторный unreserve с тем же order_id → 200 без изменений."""
     sku1 = make_sku(SKU_ID_1, stock_quantity=10, reserved_quantity=0)
+
+
+async def test_unreserve_without_prior_reserve_returns_4xx(override_db):
+    """
+    unreserve_without_prior_reserve_returns_4xx
+    Вызов unreserve для несуществующего order_id → 404,
+    reserved_quantity других SKU не изменяется.
+    """
+    sku1 = make_sku(SKU_ID_1, stock_quantity=10, reserved_quantity=5)
+
+    # ops=None → ReserveOperation не найдены
+    db = _db_for_unreserve([sku1], idem_existing=None, ops=None)
+    app.dependency_overrides[get_db] = lambda: db
+
+    body = {
+        "order_id": str(uuid.uuid4()),  # никогда не резервировался
+        "items": [{"sku_id": str(SKU_ID_1), "quantity": 2}],
+    }
+
+    async with await make_client() as client:
+        resp = await client.post(
+            "/api/v1/inventory/unreserve",
+            json=body,
+            headers=SERVICE_KEY_HEADER,
+        )
+
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "NOT_FOUND"
+    # SKU не тронут
+    assert sku1.reserved_quantity == 5
+    db.commit.assert_not_awaited()

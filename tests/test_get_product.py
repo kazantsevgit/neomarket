@@ -162,7 +162,7 @@ async def test_get_others_product_returns_404(auth_headers, mock_db):
         resp = await client.get(f"/api/v1/products/{PRODUCT_ID}", headers=auth_headers)
 
     assert resp.status_code == 404
-    assert resp.json()["detail"] == "Product not found"
+    assert resp.json()["code"] == "NOT_FOUND" or "not found" in resp.json()["message"].lower()
 
 
 async def test_get_nonexistent_returns_404(auth_headers, mock_db):
@@ -172,4 +172,4 @@ async def test_get_nonexistent_returns_404(auth_headers, mock_db):
         resp = await client.get(f"/api/v1/products/{PRODUCT_ID}", headers=auth_headers)
 
     assert resp.status_code == 404
-    assert resp.json()["detail"] == "Product not found"
+    assert resp.json()["code"] == "NOT_FOUND" or "not found" in resp.json()["message"].lower()

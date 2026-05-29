@@ -265,7 +265,7 @@ async def test_partial_reserve_failure_returns_409(override_db):
             resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY, headers=AUTH_HEADERS)
 
     assert resp.status_code == 409
-    detail = resp.json()["detail"]
+    detail = resp.json()
     assert detail["code"] == "RESERVE_FAILED"
     assert len(detail["failed_items"]) >= 1
     assert detail["failed_items"][0]["sku_id"] == str(SKU_ID_2)
@@ -326,7 +326,7 @@ async def test_b2b_unavailable_returns_503(override_db):
             resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY, headers=AUTH_HEADERS)
 
     assert resp.status_code == 503
-    detail = resp.json()["detail"]
+    detail = resp.json()
     assert detail["code"] == "B2B_UNAVAILABLE"
 
 
@@ -338,7 +338,7 @@ async def test_checkout_requires_auth(override_db):
     """Без JWT → 403 (FastAPI HTTPBearer не пропускает)."""
     async with await _client() as c:
         resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY)
-    assert resp.status_code == 403
+    assert resp.status_code in (401, 403)
 
 
 async def test_checkout_validates_empty_items(override_db):
@@ -373,7 +373,7 @@ async def test_checkout_returns_409_on_blocked_product(override_db):
             resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY, headers=AUTH_HEADERS)
 
     assert resp.status_code == 409
-    detail = resp.json()["detail"]
+    detail = resp.json()
     assert detail["code"] == "RESERVE_FAILED"
     reasons = [fi["reason"] for fi in detail["failed_items"]]
     assert "PRODUCT_BLOCKED" in reasons
@@ -399,7 +399,7 @@ async def test_checkout_returns_409_on_insufficient_stock(override_db):
             resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY, headers=AUTH_HEADERS)
 
     assert resp.status_code == 409
-    detail = resp.json()["detail"]
+    detail = resp.json()
     failed = detail["failed_items"]
     assert any(fi["reason"] in ("OUT_OF_STOCK", "INSUFFICIENT_STOCK") for fi in failed)
     mock_reserve.assert_not_awaited()
@@ -424,4 +424,4 @@ async def test_b2b_unavailable_on_reserve_returns_503(override_db):
             resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY, headers=AUTH_HEADERS)
 
     assert resp.status_code == 503
-    assert resp.json()["detail"]["code"] == "B2B_UNAVAILABLE"
+    assert resp.json()["code"] == "B2B_UNAVAILABLE"

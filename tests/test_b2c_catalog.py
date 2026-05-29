@@ -128,7 +128,7 @@ async def test_invalid_sort_returns_400():
         resp = await client.get("/api/v1/catalog/products", params={"sort": "not_a_sort"})
 
     assert resp.status_code == 400
-    body = resp.json()["detail"]
+    body = resp.json()
     assert body["code"] == "INVALID_REQUEST"
     assert "Invalid sort parameter" in body["message"]
     for allowed in VALID_SORTS:
@@ -148,7 +148,7 @@ async def test_b2b_unavailable_returns_502():
             )
 
     assert resp.status_code == 502
-    body = resp.json()["detail"]
+    body = resp.json()
     assert body["code"] == "B2B_UNAVAILABLE"
 
 

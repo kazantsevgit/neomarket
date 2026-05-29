@@ -9,7 +9,7 @@ from app.schemas.inventory import (
     ReserveRequest,
     ReserveResponse,
 )
-from app.services.inventory_service import reserve_inventory, unreserve_inventory
+from app.services.inventory_service import fulfill_inventory, reserve_inventory, unreserve_inventory
 
 router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
 
@@ -49,3 +49,16 @@ async def unreserve_endpoint(
 ) -> InventoryOrderResponse:
     """Снять резерв при отмене заказа."""
     return await unreserve_inventory(db=db, order_id=body.order_id, items=body.items)
+
+@router.post(
+    "/fulfill",
+    response_model=InventoryOrderResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(_verify_service_key)],
+)
+async def fulfill_endpoint(
+    body: InventoryOrderRequest,
+    db: AsyncSession = Depends(get_db),
+) -> InventoryOrderResponse:
+    """Списание резерва при доставке (DELIVERED)."""
+    return await fulfill_inventory(db=db, order_id=body.order_id, items=body.items)
