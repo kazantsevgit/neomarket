@@ -273,7 +273,7 @@ async def test_missing_service_key_returns_401(override_db):
         )
 
     assert resp.status_code == 401
-    assert resp.json()["detail"]["code"] == "UNAUTHORIZED"
+    assert resp.json()["code"] == "UNAUTHORIZED"
 
 
 async def test_wrong_service_key_returns_401(override_db):
@@ -293,7 +293,7 @@ async def test_wrong_service_key_returns_401(override_db):
         )
 
     assert resp.status_code == 401
-    assert resp.json()["detail"]["code"] == "UNAUTHORIZED"
+    assert resp.json()["code"] == "UNAUTHORIZED"
 
 
 # ─── Additional test: HARD_BLOCKED защита ────────────────────────────────────

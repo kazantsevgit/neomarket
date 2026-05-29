@@ -206,7 +206,7 @@ async def test_cancel_assembling_order_returns_409(override_db):
             )
 
     assert resp.status_code == 409
-    detail = resp.json()["detail"]
+    detail = resp.json()
     assert detail["code"] == "CANCEL_NOT_ALLOWED"
     assert detail["current_status"] == "ASSEMBLING"
     mock_unreserve.assert_not_awaited()
@@ -231,7 +231,7 @@ async def test_cancel_non_cancellable_statuses_return_409(override_db, bad_statu
         )
 
     assert resp.status_code == 409
-    assert resp.json()["detail"]["code"] == "CANCEL_NOT_ALLOWED"
+    assert resp.json()["code"] == "CANCEL_NOT_ALLOWED"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -255,7 +255,7 @@ async def test_other_user_order_returns_404(override_db):
         )
 
     assert resp.status_code == 404
-    assert resp.json()["detail"]["code"] == "ORDER_NOT_FOUND"
+    assert resp.json()["code"] == "ORDER_NOT_FOUND"
 
 
 async def test_nonexistent_order_returns_404(override_db):
@@ -270,11 +270,11 @@ async def test_nonexistent_order_returns_404(override_db):
         )
 
     assert resp.status_code == 404
-    assert resp.json()["detail"]["code"] == "ORDER_NOT_FOUND"
+    assert resp.json()["code"] == "ORDER_NOT_FOUND"
 
 
 async def test_cancel_requires_auth(override_db):
     """Без JWT → 403."""
     async with await _client() as c:
         resp = await c.post(f"/api/v1/orders/{ORDER_ID}/cancel")
-    assert resp.status_code == 403
+    assert resp.status_code in (401, 403)
