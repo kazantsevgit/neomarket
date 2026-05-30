@@ -10,8 +10,10 @@ from app.schemas.product import (
     B2CProductResponse,
     B2CSkuResponse,
     BlockingReasonDetail,
+    CatalogCategoryRef,
     CatalogImageRef,
     CatalogProductDetail,
+    CatalogSellerRef,
     CatalogSku,
     CharacteristicResponse,
     FieldReportResponse,
@@ -213,10 +215,30 @@ def product_to_catalog_detail(product: Product) -> CatalogProductDetail:
         for ch in (product.characteristics or [])
     } if product.characteristics else None
 
+    # category — используем category_id если нет связанной сущности
+    category = None
+    if product.category_id:
+        category = CatalogCategoryRef(
+            id=product.category_id,
+            name="",
+            level=0,
+            path=[],
+        )
+
+    # seller — используем seller_id с display_name из данных продукта
+    seller = None
+    if product.seller_id:
+        seller = CatalogSellerRef(
+            id=product.seller_id,
+            display_name="",
+        )
+
     return CatalogProductDetail(
         id=product.id,
         name=product.title,
         slug=product.slug,
+        category=category,
+        seller=seller,
         min_price=min_price,
         has_stock=has_stock,
         images=_catalog_product_images(product.images),

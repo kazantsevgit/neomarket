@@ -42,7 +42,7 @@ async def get_product_endpoint(
     # B2C / service access — only visible products
     product = await get_product(db=db, product_id=product_id)
 
-    if product.deleted or product.status not in (ProductStatus.MODERATED, ProductStatus.PUBLISHED):
+    if product.deleted or product.status != ProductStatus.MODERATED:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
     return product_to_b2c_response(product)
