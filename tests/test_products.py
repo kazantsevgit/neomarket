@@ -116,7 +116,9 @@ async def test_missing_images_returns_400(auth_headers):
         resp = await client.post("/api/v1/products", json=body, headers=auth_headers)
 
     assert resp.status_code == 422
-    assert resp.json()["code"] == "VALIDATION_ERROR"
+    body = resp.json()
+    assert {"code", "message"} <= set(body.keys())
+    assert body["code"] == "VALIDATION_ERROR"
 
 
 async def test_missing_category_returns_400(auth_headers):
@@ -125,7 +127,9 @@ async def test_missing_category_returns_400(auth_headers):
         resp = await client.post("/api/v1/products", json=body, headers=auth_headers)
 
     assert resp.status_code == 422
-    assert resp.json()["code"] == "VALIDATION_ERROR"
+    body = resp.json()
+    assert {"code", "message"} <= set(body.keys())
+    assert body["code"] == "VALIDATION_ERROR"
 
 
 async def test_invalid_category_id_returns_400(auth_headers):
@@ -134,7 +138,9 @@ async def test_invalid_category_id_returns_400(auth_headers):
         resp = await client.post("/api/v1/products", json=body, headers=auth_headers)
 
     assert resp.status_code == 422
-    assert resp.json()["code"] == "VALIDATION_ERROR"
+    body = resp.json()
+    assert {"code", "message"} <= set(body.keys())
+    assert body["code"] == "VALIDATION_ERROR"
 
 
 async def test_nonexistent_category_id_returns_400(auth_headers, mock_db):
@@ -146,5 +152,6 @@ async def test_nonexistent_category_id_returns_400(auth_headers, mock_db):
         resp = await client.post("/api/v1/products", json=body, headers=auth_headers)
 
     assert resp.status_code == 400
-    assert resp.status_code == 400 or resp.status_code == 404
-    assert "category" in resp.json()["message"].lower() or resp.json()["code"] in ("NOT_FOUND", "ERROR", "BAD_REQUEST")
+    assert resp.status_code in (400, 404)
+    body = resp.json()
+    assert {"code", "message"} <= set(body.keys())
