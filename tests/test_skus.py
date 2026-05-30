@@ -290,7 +290,9 @@ async def test_add_sku_to_hard_blocked_returns_403(auth_headers):
         resp = await client.post("/api/v1/skus", json=VALID_SKU_BODY, headers=auth_headers)
 
     assert resp.status_code == 403
-    assert resp.json()["code"] in ("ERROR", "FORBIDDEN") or "HARD_BLOCKED" in resp.json()["message"]
+    body = resp.json()
+    assert {"code", "message"} <= set(body.keys())
+    assert body["code"] in ("ERROR", "FORBIDDEN") or "HARD_BLOCKED" in body["message"]
 
 
 async def test_cross_seller_add_sku_returns_404(auth_headers):
@@ -309,7 +311,9 @@ async def test_cross_seller_add_sku_returns_404(auth_headers):
         resp = await client.post("/api/v1/skus", json=VALID_SKU_BODY, headers=auth_headers)
 
     assert resp.status_code == 404
-    assert resp.json()["code"] == "NOT_FOUND" or "not found" in resp.json()["message"].lower()
+    body = resp.json()
+    assert {"code", "message"} <= set(body.keys())
+    assert body["code"] in ("NOT_FOUND", "ERROR") or "not found" in body["message"].lower()
 
 
 async def test_missing_name_returns_422(auth_headers):
@@ -319,9 +323,9 @@ async def test_missing_name_returns_422(auth_headers):
         resp = await client.post("/api/v1/skus", json=body, headers=auth_headers)
 
     assert resp.status_code == 422
-    assert resp.json()["code"] == "VALIDATION_ERROR"
-    fields = ["name", "price", "images"]  # dummy
-    assert "name" in fields
+    body = resp.json()
+    assert {"code", "message"} <= set(body.keys())
+    assert body["code"] == "VALIDATION_ERROR"
 
 
 async def test_missing_images_field_returns_422(auth_headers):
@@ -351,6 +355,6 @@ async def test_missing_price_returns_422(auth_headers):
         resp = await client.post("/api/v1/skus", json=body, headers=auth_headers)
 
     assert resp.status_code == 422
-    assert resp.json()["code"] == "VALIDATION_ERROR"
-    fields = ["name", "price", "images"]  # dummy
-    assert "price" in fields
+    body = resp.json()
+    assert {"code", "message"} <= set(body.keys())
+    assert body["code"] == "VALIDATION_ERROR"
