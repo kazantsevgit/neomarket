@@ -31,3 +31,18 @@ def get_optional_current_seller_id(
     if credentials is None:
         return None
     return get_current_seller_id(credentials)
+
+
+def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+) -> uuid.UUID:
+    """B2C: извлекает buyer_id из JWT (claim 'sub'), игнорирует query/body."""
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        user_id: str = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token: missing sub")
+        return uuid.UUID(user_id)
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate token")
