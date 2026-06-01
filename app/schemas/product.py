@@ -229,6 +229,14 @@ class CatalogCategoryRef(BaseModel):
     """CategoryRef — только доступные поля из Category."""
     id: uuid.UUID
     name: str
+    level: int = 0
+    path: list[str] = []
+
+
+class CatalogSellerRef(BaseModel):
+    """SellerRef для CatalogProductCard."""
+    id: uuid.UUID
+    display_name: str
 
 
 class CatalogSku(BaseModel):
@@ -255,6 +263,7 @@ class CatalogProductCard(BaseModel):
     rating: Optional[float] = None
     reviews_count: int = 0
     images: List[CatalogImageRef] = []
+    seller: Optional[CatalogSellerRef] = None
 
 
 class CatalogProductDetail(CatalogProductCard):

@@ -161,7 +161,7 @@ async def test_blocked_product_returns_404(mock_db):
 
     assert resp.status_code == 404
     body = resp.json()
-    assert body["code"] == 404
+    assert body["code"] == "NOT_FOUND"
     assert body["message"] == "Product not found"
 
 
@@ -174,7 +174,7 @@ async def test_deleted_product_returns_404(mock_db):
 
     assert resp.status_code == 404
     body = resp.json()
-    assert body["code"] == 404
+    assert body["code"] == "NOT_FOUND"
     assert body["message"] == "Product not found"
 
 
@@ -186,7 +186,7 @@ async def test_nonexistent_product_returns_404(mock_db):
 
     assert resp.status_code == 404
     body = resp.json()
-    assert body["code"] == 404
+    assert body["code"] == "NOT_FOUND"
     assert body["message"] == "Product not found"
 
 
