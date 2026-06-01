@@ -16,10 +16,11 @@ from app.schemas.product import (
     ProductResponse,
     ProductUpdate,
 )
-from app.services.catalog_service import list_catalog_products
+from app.services.catalog_service import list_visible_products
 from app.services.product_presenter import (
     product_to_b2c_response,
     product_to_public_response,
+    product_to_public_short_response,
     product_to_seller_response,
 )
 from app.services.product_service import create_product, delete_product, get_product, update_product
@@ -48,7 +49,7 @@ async def list_products_endpoint(
     ids: str | None = Query(None, description="Batch: UUID через запятую"),
 ) -> ProductPublicPaginatedResponse:
     product_ids = _parse_ids_param(ids)
-    products, total = await list_catalog_products(
+    products, total = await list_visible_products(
         db,
         limit=limit,
         offset=offset,
@@ -57,7 +58,7 @@ async def list_products_endpoint(
         product_ids=product_ids,
     )
     return ProductPublicPaginatedResponse(
-        items=[product_to_public_response(p) for p in products],
+        items=[product_to_public_short_response(p) for p in products],
         total_count=total,
         limit=limit,
         offset=offset,

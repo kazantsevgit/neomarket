@@ -242,7 +242,7 @@ async def test_first_sku_emits_created_event_to_moderation(auth_headers):
 
 async def test_first_sku_on_non_created_product_no_moderation(auth_headers):
     """Первый SKU при статусе != CREATED не переводит товар и не шлёт событие."""
-    product = make_product(ProductStatus.REJECTED)
+    product = make_product(ProductStatus.ON_MODERATION)
     sku = make_sku()
 
     db = _db_with_product(product, existing_skus=0)
@@ -255,7 +255,7 @@ async def test_first_sku_on_non_created_product_no_moderation(auth_headers):
             resp = await client.post("/api/v1/skus", json=VALID_SKU_BODY, headers=auth_headers)
 
     assert resp.status_code == 201
-    assert product.status == ProductStatus.REJECTED
+    assert product.status == ProductStatus.ON_MODERATION
     mock_emit.assert_not_called()
 
 

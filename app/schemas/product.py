@@ -173,8 +173,22 @@ class ProductPublicResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProductPublicShortResponse(BaseModel):
+    """Короткая карточка товара для списка каталога (neomarket-b2b.yaml ProductPublicShortResponse)."""
+    id: uuid.UUID
+    title: str
+    slug: str
+    status: str
+    category_id: uuid.UUID
+    min_price: int
+    cover_image: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ProductPublicPaginatedResponse(BaseModel):
-    items: List[ProductPublicResponse]
+    items: List[ProductPublicShortResponse]
     total_count: int
     limit: int
     offset: int
