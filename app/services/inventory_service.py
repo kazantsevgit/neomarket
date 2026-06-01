@@ -188,12 +188,10 @@ async def unreserve_inventory(
     }
 
     if not ops:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "code": "NOT_FOUND",
-                "message": f"No reservation found for order_id={order_id}",
-            },
+        # Нет резерва по order_id — no-op, возвращаем 200 (идемпотентность)
+        logger.info("no reservation found for order_id=%s, returning 200 no-op", order_id)
+        return InventoryOrderResponse(
+            order_id=order_id, status="UNRESERVED", processed_at=_utcnow()
         )
 
     # ── SELECT FOR UPDATE по реально зарезервированным SKU ──────────────────
@@ -253,12 +251,10 @@ async def fulfill_inventory(
     }
 
     if not ops:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "code": "NOT_FOUND",
-                "message": f"No reservation found for order_id={order_id}",
-            },
+        # Нет резерва по order_id — no-op, возвращаем 200 (идемпотентность)
+        logger.info("no reservation found for order_id=%s, returning 200 no-op", order_id)
+        return InventoryOrderResponse(
+            order_id=order_id, status="UNRESERVED", processed_at=_utcnow()
         )
 
     sku_ids = list(ops.keys())
