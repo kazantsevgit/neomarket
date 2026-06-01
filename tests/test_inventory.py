@@ -344,10 +344,11 @@ async def test_idempotent_unreserve_is_noop(override_db):
     sku1 = make_sku(SKU_ID_1, stock_quantity=10, reserved_quantity=0)
 
 
-async def test_unreserve_without_prior_reserve_returns_4xx(override_db):
+async def test_unreserve_without_prior_reserve_is_noop(override_db):
     """
-    unreserve_without_prior_reserve_returns_4xx
-    Вызов unreserve для несуществующего order_id → 404,
+    unreserve_without_prior_reserve_is_noop
+    Вызов unreserve для несуществующего order_id → 200 no-op (идемпотентность).
+    По спеке unreserve определяет только ответ 200 — нечего снимать → 200.
     reserved_quantity других SKU не изменяется.
     """
     sku1 = make_sku(SKU_ID_1, stock_quantity=10, reserved_quantity=5)
@@ -368,8 +369,9 @@ async def test_unreserve_without_prior_reserve_returns_4xx(override_db):
             headers=SERVICE_KEY_HEADER,
         )
 
-    assert resp.status_code == 404
-    assert resp.json()["code"] == "NOT_FOUND"
+    # Нет резерва → 200 no-op (идемпотентность по спеке)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "UNRESERVED"
     # SKU не тронут
     assert sku1.reserved_quantity == 5
     db.commit.assert_not_awaited()
