@@ -62,8 +62,6 @@ async def get_favorites(
         ProductStatus.CREATED,
         ProductStatus.ON_MODERATION,
         ProductStatus.MODERATED,
-        ProductStatus.PUBLISHED,
-        ProductStatus.REJECTED,
     ]
 
     count_q = (

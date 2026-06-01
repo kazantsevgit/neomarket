@@ -19,7 +19,7 @@ CATEGORY_NAME = "Electronics"
 SKU_ID = uuid.uuid4()
 
 
-def make_product(*, status=ProductStatus.PUBLISHED, deleted=False):
+def make_product(*, status=ProductStatus.MODERATED, deleted=False):
     p = MagicMock(spec=Product)
     p.id = PRODUCT_ID
     p.title = "Test Product"

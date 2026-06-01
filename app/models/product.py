@@ -16,10 +16,8 @@ class ProductStatus(str, enum.Enum):
     CREATED = "CREATED"
     ON_MODERATION = "ON_MODERATION"
     MODERATED = "MODERATED"
-    PUBLISHED = "PUBLISHED"
     BLOCKED = "BLOCKED"
     HARD_BLOCKED = "HARD_BLOCKED"
-    REJECTED = "REJECTED"
 
 
 def _utcnow() -> datetime:

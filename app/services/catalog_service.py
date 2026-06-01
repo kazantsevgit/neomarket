@@ -252,6 +252,57 @@ async def list_catalog_products(
     )
 
 
+async def list_visible_products(
+    db: AsyncSession,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    category_id: uuid.UUID | None = None,
+    search: str | None = None,
+    product_ids: list[uuid.UUID] | None = None,
+) -> tuple[list[Product], int]:
+    """B2B-7: список видимых товаров (MODERATED, не удалён, есть SKU в наличии).
+
+    Возвращает (products, total_count).
+    """
+    conditions = [
+        Product.status == ProductStatus.MODERATED,
+        Product.deleted.is_(False),
+        _HAS_IN_STOCK_SKU,
+    ]
+
+    if category_id is not None:
+        conditions.append(Product.category_id == category_id)
+
+    if search:
+        pattern = f"%{search}%"
+        conditions.append(
+            or_(
+                Product.title.ilike(pattern),
+                Product.description.ilike(pattern),
+            )
+        )
+
+    if product_ids is not None:
+        conditions.append(Product.id.in_(product_ids))
+
+    count_stmt = select(func.count()).select_from(Product).where(*conditions)
+    total = (await db.execute(count_stmt)).scalar_one()
+
+    stmt = (
+        select(Product)
+        .where(*conditions)
+        .options(selectinload(Product.skus))
+        .order_by(Product.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(stmt)
+    products = list(result.scalars().unique().all())
+
+    return products, total
+
+
 async def get_catalog_facets(
     db: AsyncSession,
     *,

@@ -19,6 +19,7 @@ from app.schemas.product import (
     FieldReportResponse,
     ProductImageResponse,
     ProductPublicResponse,
+    ProductPublicShortResponse,
     ProductResponse,
     SKUPublicResponse,
     SKUImageResponse,
@@ -164,6 +165,36 @@ def product_to_b2c_response(product: Product) -> B2CProductResponse:
         status=product.status.value,
         characteristics=_b2c_characteristics(product.characteristics),
         skus=[sku_to_b2c_response(sku) for sku in product.skus],
+    )
+
+
+def _product_cover_image(product: Product) -> str | None:
+    if product.images:
+        first = min(product.images, key=lambda img: img.get("ordering", 0))
+        return first.get("url")
+    for sku in product.skus:
+        if sku.images_rel and sku.active_quantity > 0:
+            return min(sku.images_rel, key=lambda img: img.ordering).url
+    return None
+
+
+def product_to_public_short_response(product: Product) -> ProductPublicShortResponse:
+    """Короткая карточка для списка каталога (neomarket-b2b.yaml ProductPublicShortResponse)."""
+    prices = [
+        sku.price - sku.discount
+        for sku in product.skus
+        if sku.active_quantity > 0
+    ]
+    min_price = min(prices) if prices else 0
+    return ProductPublicShortResponse(
+        id=product.id,
+        title=product.title,
+        slug=product.slug,
+        status=product.status.value,
+        category_id=product.category_id,
+        min_price=min_price,
+        cover_image=_product_cover_image(product),
+        created_at=product.created_at,
     )
 
 
