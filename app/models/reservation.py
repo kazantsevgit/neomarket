@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, JSON, String
+from sqlalchemy import Column, DateTime, Integer, JSON, String
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
@@ -18,3 +18,18 @@ class ReservationIdempotency(Base):
     order_id        = Column(UUID(as_uuid=True), nullable=False, index=True)
     response_payload = Column(JSON, nullable=False)
     created_at       = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ReserveOperation(Base):
+    """
+    Хранит состав каждого резервирования.
+    Используется в unreserve для верификации: снимаем только то,
+    что было зарезервировано под этот order_id.
+    """
+    __tablename__ = "reserve_operations"
+
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id    = Column(UUID(as_uuid=True), nullable=False, index=True)
+    sku_id      = Column(UUID(as_uuid=True), nullable=False)
+    quantity    = Column(Integer, nullable=False)
+    created_at  = Column(DateTime(timezone=True), nullable=False, default=_utcnow)

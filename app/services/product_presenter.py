@@ -5,7 +5,16 @@ from typing import Any
 
 from app.models.product import Product, SKU
 from app.schemas.product import (
+    B2CCharacteristic,
+    B2CProductImage,
+    B2CProductResponse,
+    B2CSkuResponse,
     BlockingReasonDetail,
+    CatalogCategoryRef,
+    CatalogImageRef,
+    CatalogProductDetail,
+    CatalogSellerRef,
+    CatalogSku,
     CharacteristicResponse,
     FieldReportResponse,
     ProductImageResponse,
@@ -118,4 +127,122 @@ def product_to_public_response(product: Product) -> ProductPublicResponse:
         skus=[sku_to_public_response(sku) for sku in product.skus],
         created_at=product.created_at,
         updated_at=product.updated_at,
+    )
+
+
+def _b2c_product_images(images: list[dict]) -> list[B2CProductImage]:
+    return [B2CProductImage(url=img["url"], ordering=img["ordering"]) for img in images]
+
+
+def _b2c_characteristics(items: list[dict]) -> list[B2CCharacteristic]:
+    return [B2CCharacteristic(name=item["name"], value=item["value"]) for item in items]
+
+
+def sku_to_b2c_response(sku: SKU) -> B2CSkuResponse:
+    image: str | None = None
+    if sku.images_rel:
+        image = min(sku.images_rel, key=lambda img: img.ordering).url
+    return B2CSkuResponse(
+        id=sku.id,
+        name=sku.name,
+        price=sku.price,
+        discount=sku.discount,
+        image=image,
+        active_quantity=sku.active_quantity,
+        in_stock=sku.active_quantity > 0,
+        characteristics=[B2CCharacteristic(name=ch.name, value=ch.value) for ch in sku.characteristics_rel],
+    )
+
+
+def product_to_b2c_response(product: Product) -> B2CProductResponse:
+    return B2CProductResponse(
+        id=product.id,
+        slug=product.slug,
+        title=product.title,
+        description=product.description,
+        images=_b2c_product_images(product.images),
+        status=product.status.value,
+        characteristics=_b2c_characteristics(product.characteristics),
+        skus=[sku_to_b2c_response(sku) for sku in product.skus],
+    )
+
+
+# ── Catalog (B2C по спецификации) ───────────────────────────────────────
+
+def _catalog_product_images(images: list[dict]) -> list[CatalogImageRef]:
+    return [
+        CatalogImageRef(
+            id=uuid.UUID(img["id"]) if isinstance(img["id"], str) else img["id"],
+            url=img["url"],
+            ordering=img.get("ordering", 0),
+        )
+        for img in images
+    ]
+
+
+def _catalog_sku_images(sku: SKU) -> list[CatalogImageRef]:
+    return [
+        CatalogImageRef(
+            id=img.id,
+            url=img.url,
+            ordering=img.ordering,
+        )
+        for img in sku.images_rel
+    ]
+
+
+def sku_to_catalog_response(sku: SKU) -> CatalogSku:
+    chars = {ch.name: ch.value for ch in sku.characteristics_rel}
+    return CatalogSku(
+        id=sku.id,
+        name=sku.name,
+        sku_code=sku.article,
+        price=sku.price,
+        old_price=(sku.price + sku.discount) if sku.discount > 0 else None,
+        available_quantity=sku.active_quantity,
+        attributes=chars or None,
+        images=_catalog_sku_images(sku),
+    )
+
+
+def product_to_catalog_detail(product: Product) -> CatalogProductDetail:
+    prices = [sku.price for sku in product.skus] if product.skus else [0]
+    min_price = min(prices)
+    has_stock = any(sku.active_quantity > 0 for sku in product.skus)
+
+    chars = {
+        ch["name"]: ch["value"]
+        for ch in (product.characteristics or [])
+    } if product.characteristics else None
+
+    # category — используем category_id если нет связанной сущности
+    category = None
+    if product.category_id:
+        category = CatalogCategoryRef(
+            id=product.category_id,
+            name="",
+            level=0,
+            path=[],
+        )
+
+    # seller — используем seller_id с display_name из данных продукта
+    seller = None
+    if product.seller_id:
+        seller = CatalogSellerRef(
+            id=product.seller_id,
+            display_name="",
+        )
+
+    return CatalogProductDetail(
+        id=product.id,
+        name=product.title,
+        slug=product.slug,
+        category=category,
+        seller=seller,
+        min_price=min_price,
+        has_stock=has_stock,
+        images=_catalog_product_images(product.images),
+        description=product.description or "",
+        attributes=chars,
+        skus=[sku_to_catalog_response(sku) for sku in product.skus],
     )
