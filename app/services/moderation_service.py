@@ -28,9 +28,16 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.models.blocking_reason import BlockingReason
 from app.models.moderation_event import ModerationEventIdempotency
 from app.models.product import Product, ProductStatus
-from app.schemas.moderation import FieldReport, ModerationEventRequest, ModerationEventType
+from app.schemas.moderation import (
+    DeclineRequest,
+    DeclineResponse,
+    FieldReport,
+    ModerationEventRequest,
+    ModerationEventType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,3 +157,82 @@ async def apply_moderation_decision(
         payload.product_id,
         payload.event_type.value,
     )
+
+
+async def hard_block_product(
+    db: AsyncSession,
+    product_id: uuid.UUID,
+    request: DeclineRequest,
+) -> DeclineResponse:
+    """
+    Жёсткая блокировка товара (US-MOD-05).
+
+    1. Загружаем товар.
+    2. Проверяем, что он не в HARD_BLOCKED (терминальный статус).
+    3. Загружаем причину блокировки.
+    4. Проверяем hard_block=true.
+    5. UPDATE product: status=HARD_BLOCKED, blocking_reason, field_reports.
+    6. Каскадное событие в B2C.
+    7. Ответ 200.
+    """
+    product: Optional[Product] = await db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "PRODUCT_NOT_FOUND", "message": "Product not found"},
+        )
+
+    if product.status == ProductStatus.HARD_BLOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "ALREADY_HARD_BLOCKED",
+                "message": "Product is already HARD_BLOCKED",
+            },
+        )
+
+    reason: Optional[BlockingReason] = await db.get(
+        BlockingReason, request.blocking_reason_id
+    )
+    if reason is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "REASON_NOT_FOUND", "message": "Blocking reason not found"},
+        )
+    if not reason.hard_block:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "NOT_HARD_BLOCK_REASON",
+                "message": "Blocking reason is not a hard-block reason",
+            },
+        )
+
+    product.status = ProductStatus.HARD_BLOCKED
+    product.blocking_reason_id = reason.id
+    product.blocking_reason = {
+        "id": str(reason.id),
+        "code": reason.code,
+        "title": reason.title,
+        "hard_block": True,
+    }
+    product.moderator_comment = request.moderator_comment
+
+    if request.field_reports:
+        product.field_reports = [
+            {
+                "field_name": fr.field_name,
+                "sku_id": str(fr.sku_id) if fr.sku_id else None,
+                "comment": fr.comment,
+            }
+            for fr in request.field_reports
+        ]
+    else:
+        product.field_reports = []
+
+    await db.commit()
+    logger.info("hard_blocked product_id=%s reason=%s", product_id, reason.code)
+
+    emit_product_blocked_to_b2c(product.id)
+
+    return DeclineResponse(product_id=product.id, status=ProductStatus.HARD_BLOCKED.value)

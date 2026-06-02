@@ -218,7 +218,7 @@ def _catalog_sku_images(sku: SKU) -> list[CatalogImageRef]:
             url=img.url,
             ordering=img.ordering,
         )
-        for img in sku.images_rel
+        for img in sku.images_rel   
     ]
 
 
