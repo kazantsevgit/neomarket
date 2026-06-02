@@ -315,6 +315,54 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
+  /api/v1/products/{product_id}/approve:
+    parameters:
+      - name: product_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Tickets]
+      summary: Одобрить товар по product_id (MOD-3)
+      description: |
+        Канон-flow approve-product: тикет IN_REVIEW, закреплён за модератором,
+        проверка SKU в B2B, событие MODERATED на /api/v1/moderation/events.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                moderator_comment:
+                  type: string
+                  maxLength: 2000
+      responses:
+        '200':
+          description: Товар одобрен
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [product_id, status]
+                properties:
+                  product_id: { type: string, format: uuid }
+                  status: { type: string, enum: [MODERATED] }
+        '403':
+          description: Карточка закреплена за другим модератором
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Товар не найден в очереди модерации
+        '409':
+          description: Неверный статус, нет SKU или правка во время review
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: B2B не принял событие
+
   /api/v1/tickets/{ticket_id}/approve:
     parameters:
       - $ref: '#/components/parameters/TicketId'

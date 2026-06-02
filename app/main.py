@@ -1,3 +1,5 @@
+import app.models  # noqa: F401 — регистрация ORM-моделей
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -10,6 +12,7 @@ from app.routers.skus import router as skus_router
 from app.routers.inventory import router as inventory_router
 from app.routers.moderation import router as moderation_router
 from app.routers.decline import router as decline_router
+from app.routers.approve import router as approve_router
 from app.routers.favorites import router as favorites_router
 
 from app.routers.orders import router as orders_router
@@ -25,6 +28,7 @@ app.include_router(skus_router)
 app.include_router(inventory_router)
 app.include_router(moderation_router)
 app.include_router(decline_router)
+app.include_router(approve_router)
 app.include_router(favorites_router)
 app.include_router(orders_router)
 app.include_router(cart_router)
@@ -33,11 +37,11 @@ app.include_router(auth_router)
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    if isinstance(exc.detail, dict) and "code" in exc.detail and "message" in exc.detail:
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=exc.detail,
-        )
+    if isinstance(exc.detail, dict):
+        if "code" in exc.detail and "message" in exc.detail:
+            return JSONResponse(status_code=exc.status_code, content=exc.detail)
+        if "error" in exc.detail:
+            return JSONResponse(status_code=exc.status_code, content=exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
         content={"code": "ERROR", "message": str(exc.detail)},
