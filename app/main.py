@@ -9,6 +9,7 @@ from app.routers.public import router as public_router
 from app.routers.skus import router as skus_router
 from app.routers.inventory import router as inventory_router
 from app.routers.moderation import router as moderation_router
+from app.routers.decline import router as decline_router
 from app.routers.favorites import router as favorites_router
 
 from app.routers.orders import router as orders_router
@@ -23,6 +24,7 @@ app.include_router(public_router)
 app.include_router(skus_router)
 app.include_router(inventory_router)
 app.include_router(moderation_router)
+app.include_router(decline_router)
 app.include_router(favorites_router)
 app.include_router(orders_router)
 app.include_router(cart_router)
