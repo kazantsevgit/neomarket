@@ -28,6 +28,15 @@ class DeclineResponse(BaseModel):
     status: str
 
 
+class ApproveRequest(BaseModel):
+    moderator_comment: Optional[str] = Field(None, max_length=2000)
+
+
+class ApproveResponse(BaseModel):
+    product_id: uuid.UUID
+    status: str
+
+
 class ModerationEventRequest(BaseModel):
     idempotency_key: uuid.UUID
     product_id: uuid.UUID
