@@ -18,6 +18,7 @@ from app.routers.favorites import router as favorites_router
 from app.routers.orders import router as orders_router
 from app.routers.cart import router as cart_router
 from app.routers.auth import router as auth_router
+from app.routers.invoices import router as invoices_router
 
 app = FastAPI(title="NeoMarket B2B API", version="1.0.0")
 
@@ -33,6 +34,7 @@ app.include_router(favorites_router)
 app.include_router(orders_router)
 app.include_router(cart_router)
 app.include_router(auth_router)
+app.include_router(invoices_router)
 
 
 @app.exception_handler(HTTPException)
