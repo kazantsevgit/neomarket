@@ -65,6 +65,16 @@ class SKUCreate(BaseModel):
     characteristics: List[Characteristic] = Field(default_factory=list)
 
 
+class SKUUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    price: int = Field(..., ge=0, description="Цена в копейках")
+    discount: int = Field(default=0, ge=0, description="Скидка в копейках")
+    cost_price: Optional[int] = Field(default=None)
+    article: Optional[str] = None
+    images: List[SKUImageCreate] = Field(default_factory=list)
+    characteristics: List[Characteristic] = Field(default_factory=list)
+
+
 class SKUResponse(BaseModel):
     """Seller-view SKU — соответствует neomarket-b2b.yaml:1284-1318."""
     id:               uuid.UUID

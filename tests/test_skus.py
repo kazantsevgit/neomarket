@@ -6,6 +6,8 @@ DoD-сценарии:
     - first_sku_transitions_product_to_on_moderation   [реальный add_sku, мок DB]
     - first_sku_emits_created_event_to_moderation
     - second_sku_no_state_change
+    - sku_on_moderated_product_returns_to_on_moderation
+    - sku_on_blocked_product_returns_to_on_moderation
   unhappy:
     - add_sku_to_hard_blocked_returns_403
     - missing_name_returns_422                         [блокер 2]
@@ -276,6 +278,57 @@ async def test_second_sku_no_state_change(auth_headers):
     assert resp.status_code == 201
     mock_emit.assert_not_called()
     assert product.status == ProductStatus.ON_MODERATION  # без изменений
+
+
+
+async def test_sku_on_moderated_product_returns_to_on_moderation(auth_headers):
+    """
+    Добавление SKU к MODERATED товару → ON_MODERATION + событие EDITED.
+    Канон B2B-2: новый непроверенный SKU требует повторной модерации.
+    """
+    product = make_product(ProductStatus.MODERATED)
+    sku = make_sku()
+
+    db = _db_with_product(product, existing_skus=1)
+    db.refresh.side_effect = lambda obj: None
+    app.dependency_overrides[get_db] = lambda: db
+
+    with patch("app.services.sku_service._reload_sku_with_relations", new_callable=AsyncMock, return_value=sku),             patch("app.services.sku_service.emit_product_created") as mock_created,             patch("app.services.sku_service.emit_product_edited") as mock_edited:
+        async with await make_client() as client:
+            resp = await client.post("/api/v1/skus", json=VALID_SKU_BODY, headers=auth_headers)
+
+    assert resp.status_code == 201
+    assert product.status == ProductStatus.ON_MODERATION
+    mock_created.assert_not_called()
+    mock_edited.assert_called_once_with(
+        product_id=product.id,
+        seller_id=product.seller_id,
+        category_id=product.category_id,
+        title=product.title,
+        sku_id=sku.id,
+        price=sku.price,
+    )
+
+
+async def test_sku_on_blocked_product_returns_to_on_moderation(auth_headers):
+    """
+    Добавление SKU к BLOCKED товару → ON_MODERATION + событие EDITED.
+    """
+    product = make_product(ProductStatus.BLOCKED)
+    sku = make_sku()
+
+    db = _db_with_product(product, existing_skus=1)
+    db.refresh.side_effect = lambda obj: None
+    app.dependency_overrides[get_db] = lambda: db
+
+    with patch("app.services.sku_service._reload_sku_with_relations", new_callable=AsyncMock, return_value=sku),             patch("app.services.sku_service.emit_product_created") as mock_created,             patch("app.services.sku_service.emit_product_edited") as mock_edited:
+        async with await make_client() as client:
+            resp = await client.post("/api/v1/skus", json=VALID_SKU_BODY, headers=auth_headers)
+
+    assert resp.status_code == 201
+    assert product.status == ProductStatus.ON_MODERATION
+    mock_created.assert_not_called()
+    mock_edited.assert_called_once()
 
 
 # ─── Unhappy path ─────────────────────────────────────────────────────────────
