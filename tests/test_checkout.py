@@ -115,6 +115,7 @@ def make_order(
 ) -> MagicMock:
     o = MagicMock(spec=Order)
     o.id = order_id or uuid.uuid4()
+    o.user_id = USER_ID
     o.status = status
     o.total_amount = 12_999_000 * 3
     o.delivery_address = "г. Москва, ул. Тверская, д. 1"
@@ -228,7 +229,11 @@ async def test_checkout_creates_paid_order_with_fixed_prices(override_db):
 
     # Итоговая сумма
     expected_total = 12_999_000 * 2 + 13_999_000 * 1
-    assert data["total_amount"] == expected_total
+    assert data["total"] == expected_total
+    assert data["subtotal"] == expected_total
+    assert data["buyer_id"] == str(USER_ID)
+    assert data["delivery_address"] == CHECKOUT_BODY["delivery_address"]
+    assert all("name" in item for item in data["items"])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

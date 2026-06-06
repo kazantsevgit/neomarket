@@ -37,11 +37,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from fastapi import HTTPException, status
+from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.order import Order, OrderStatus
+from app.orders.errors import order_http_error
+from app.orders.presenter import order_to_response
 from app.schemas.orders import OrderResponse
 from app.services.b2b_client import B2BUnavailableError, unreserve
 
@@ -72,21 +74,19 @@ async def cancel_order(
     order: Order | None = result.scalar_one_or_none()
 
     if order is None or order.user_id != user_id:
-        # 404 — не раскрываем факт существования чужого заказа (IDOR)
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "ORDER_NOT_FOUND", "message": "Заказ не найден"},
+        raise order_http_error(
+            status.HTTP_404_NOT_FOUND,
+            "ORDER_NOT_FOUND",
+            "Заказ не найден",
         )
 
     # ── 2. Проверка допустимого статуса ──────────────────────────────────────
     if order.status not in _CANCELLABLE:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "CANCEL_NOT_ALLOWED",
-                "message": f"Отмена невозможна: заказ в статусе {order.status.value}",
-                "current_status": order.status.value,
-            },
+        raise order_http_error(
+            status.HTTP_409_CONFLICT,
+            "CANCEL_NOT_ALLOWED",
+            f"Отмена невозможна: заказ в статусе {order.status.value}",
+            current_status=order.status.value,
         )
 
     # ── 3. Unreserve → B2B ───────────────────────────────────────────────────
@@ -111,4 +111,4 @@ async def cancel_order(
     await db.commit()
     await db.refresh(order)
 
-    return OrderResponse.model_validate(order)
+    return order_to_response(order)

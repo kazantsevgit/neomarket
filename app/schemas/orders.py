@@ -30,25 +30,24 @@ class OrderItemResponse(BaseModel):
     id: uuid.UUID
     sku_id: uuid.UUID
     product_id: uuid.UUID
+    name: str
     product_title: str
     sku_name: str
     quantity: int
     unit_price: int
     line_total: int
 
-    model_config = {"from_attributes": True}
-
 
 class OrderResponse(BaseModel):
     id: uuid.UUID
+    buyer_id: uuid.UUID
     status: str
     items: List[OrderItemResponse]
-    total_amount: int
-    delivery_address: Optional[str]
+    subtotal: int
+    total: int
+    delivery_address: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 # ── Error bodies ──────────────────────────────────────────────────────────────
