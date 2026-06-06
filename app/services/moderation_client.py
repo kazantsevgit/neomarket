@@ -87,3 +87,35 @@ def emit_product_created(
         "price": price,
     }
     asyncio.create_task(_send(payload))
+
+
+def emit_product_edited(
+    *,
+    product_id: uuid.UUID,
+    seller_id: uuid.UUID,
+    category_id: uuid.UUID,
+    title: str,
+    sku_id: uuid.UUID,
+    price: int,
+    occurred_at: datetime | None = None,
+) -> None:
+    """
+    Отправляет событие EDITED в Moderation (fire-and-forget).
+    Вызывается при:
+    - PUT /products/{id} (редактирование одобренного/заблокированного товара)
+    - PUT /skus/{id} (редактирование SKU одобренного/заблокированного товара)
+    - POST /skus (добавление SKU к MODERATED/BLOCKED товару)
+    """
+    ts = occurred_at or datetime.now(timezone.utc)
+    payload = {
+        "event_type": "EDITED",
+        "idempotency_key": str(uuid.uuid4()),  # каждое редактирование уникально
+        "occurred_at": ts.isoformat(),
+        "product_id": str(product_id),
+        "seller_id": str(seller_id),
+        "category_id": str(category_id),
+        "title": title,
+        "sku_id": str(sku_id),
+        "price": price,
+    }
+    asyncio.create_task(_send(payload))

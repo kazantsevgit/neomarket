@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models import product as product_models
 from app.schemas.product import SKUCreate
-from app.services.moderation_client import emit_product_created
+from app.services.moderation_client import emit_product_created, emit_product_edited
 
 Product = product_models.Product
 ProductStatus = product_models.ProductStatus
@@ -51,10 +51,14 @@ async def add_sku(
     existing_count_result = await db.execute(
         select(func.count()).where(SKU.product_id == product.id)
     )
-    is_first_sku = existing_count_result.scalar_one() == 0
-    should_send_to_moderation = (
-        is_first_sku and product.status == ProductStatus.CREATED
-    )
+    existing_count = existing_count_result.scalar_one()
+    is_first_sku = existing_count == 0
+
+    # Первый SKU на CREATED → CREATED-событие и ON_MODERATION
+    should_send_created = is_first_sku and product.status == ProductStatus.CREATED
+    # Любой SKU на MODERATED/BLOCKED → EDITED-событие и ON_MODERATION (повторная модерация)
+    should_send_edited = product.status in (ProductStatus.MODERATED, ProductStatus.BLOCKED)
+    should_send_to_moderation = should_send_created or should_send_edited
 
     # 4. Создаём SKU
     sku = SKU(
@@ -75,16 +79,25 @@ async def add_sku(
     for ch in data.characteristics:
         sku.characteristics_rel.append(SKUCharacteristic(name=ch.name, value=ch.value))
 
-    # 6. Первый SKU при статусе CREATED → ON_MODERATION (канон B2B-2)
+    # 6. Переход в ON_MODERATION по канону B2B-2
     if should_send_to_moderation:
         product.status = ProductStatus.ON_MODERATION
 
     await db.commit()
     sku = await _reload_sku_with_relations(db, sku.id)
 
-    # 7. Событие в Moderation — только при первом SKU и статусе CREATED
-    if should_send_to_moderation:
+    # 7. Событие в Moderation
+    if should_send_created:
         emit_product_created(
+            product_id=product.id,
+            seller_id=product.seller_id,
+            category_id=product.category_id,
+            title=product.title,
+            sku_id=sku.id,
+            price=sku.price,
+        )
+    elif should_send_edited:
+        emit_product_edited(
             product_id=product.id,
             seller_id=product.seller_id,
             category_id=product.category_id,
