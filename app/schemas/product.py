@@ -197,32 +197,6 @@ class ProductPublicShortResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class ProductShortResponse(BaseModel):
-    """Короткая карточка товара для списка продавца (seller cabinet).
-    Соответствует neomarket-b2b.yaml ProductShortResponse + skus_count, total_active_quantity.
-    """
-    id: uuid.UUID
-    title: str
-    slug: str
-    status: str
-    category_id: uuid.UUID
-    deleted: bool
-    created_at: datetime
-    min_price: int | None = None
-    cover_image: str | None = None
-    skus_count: int = 0
-    total_active_quantity: int = 0
-
-    model_config = {"from_attributes": True}
-
-
-class ProductPaginatedResponse(BaseModel):
-    items: List[ProductShortResponse]
-    total_count: int
-    limit: int
-    offset: int
-
-
 class ProductPublicPaginatedResponse(BaseModel):
     items: List[ProductPublicShortResponse]
     total_count: int
