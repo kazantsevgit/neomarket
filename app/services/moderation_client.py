@@ -89,6 +89,31 @@ def emit_product_created(
     asyncio.create_task(_send(payload))
 
 
+def emit_product_deleted(
+    *,
+    product_id: uuid.UUID,
+    seller_id: uuid.UUID,
+    category_id: uuid.UUID,
+    title: str,
+    occurred_at: datetime | None = None,
+) -> None:
+    """
+    Отправляет событие DELETED в Moderation (fire-and-forget).
+    Вызывается при удалении последнего SKU товара в статусе ON_MODERATION.
+    """
+    ts = occurred_at or datetime.now(timezone.utc)
+    payload = {
+        "event_type": "DELETED",
+        "idempotency_key": str(product_id),
+        "occurred_at": ts.isoformat(),
+        "product_id": str(product_id),
+        "seller_id": str(seller_id),
+        "category_id": str(category_id),
+        "title": title,
+    }
+    asyncio.create_task(_send(payload))
+
+
 def emit_product_edited(
     *,
     product_id: uuid.UUID,

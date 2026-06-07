@@ -7,7 +7,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models import product as product_models
 from app.schemas.product import SKUCreate
-from app.services.moderation_client import emit_product_created, emit_product_edited
+from app.services.inventory_service import emit_sku_out_of_stock
+from app.services.moderation_client import emit_product_created, emit_product_deleted, emit_product_edited
 
 Product = product_models.Product
 ProductStatus = product_models.ProductStatus
@@ -107,3 +108,98 @@ async def add_sku(
         )
 
     return sku
+
+
+async def delete_sku(
+    db: AsyncSession,
+    sku_id: uuid.UUID,
+    seller_id: uuid.UUID,
+) -> None:
+    """
+    Удаление SKU с guardrail-проверками и каскадными side-эффектами.
+
+    Порядок проверок (критичен!):
+      1. SKU существует → 404
+      2. Ownership (sku.product.seller_id vs JWT seller_id) → 403 NOT_OWNER
+      3. Товар HARD_BLOCKED → 403 FORBIDDEN
+      4. reserved_quantity > 0 → 409 CONFLICT
+
+    Side-эффекты (после удаления):
+      - Если не осталось SKU и товар ON_MODERATION → CREATED + DELETED событие
+      - Если active_quantity > 0 и товар MODERATED → SKU_OUT_OF_STOCK событие
+    """
+    result = await db.execute(
+        select(SKU)
+        .where(SKU.id == sku_id)
+        .options(
+            selectinload(SKU.product),
+            selectinload(SKU.images_rel),
+            selectinload(SKU.characteristics_rel),
+        )
+    )
+    sku = result.scalar_one_or_none()
+
+    if sku is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "SKU not found"},
+        )
+
+    product = sku.product
+
+    if product.seller_id != seller_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "NOT_OWNER",
+                "message": "SKU does not belong to the authenticated seller",
+            },
+        )
+
+    if product.status == ProductStatus.HARD_BLOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "FORBIDDEN",
+                "message": "Cannot delete SKU of hard-blocked product",
+            },
+        )
+
+    if sku.reserved_quantity > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "CONFLICT",
+                "message": "Cannot delete SKU with active reserves",
+            },
+        )
+
+    # Сохраняем состояние ДО удаления для side-эффектов
+    active_quantity = sku.active_quantity
+    product_status_before = product.status
+
+    # Физическое удаление SKU
+    await db.delete(sku)
+
+    # Считаем оставшиеся SKU после удаления текущего
+    remaining_result = await db.execute(
+        select(func.count()).where(SKU.product_id == product.id)
+    )
+    remaining = remaining_result.scalar_one()
+    is_last_sku = remaining == 0
+
+    # Side-эффект 1: последний SKU, товар ON_MODERATION → CREATED + DELETED
+    if is_last_sku and product.status == ProductStatus.ON_MODERATION:
+        product.status = ProductStatus.CREATED
+        emit_product_deleted(
+            product_id=product.id,
+            seller_id=product.seller_id,
+            category_id=product.category_id,
+            title=product.title,
+        )
+
+    # Side-эффект 2: active_quantity > 0 и товар MODERATED → SKU_OUT_OF_STOCK
+    if active_quantity > 0 and product_status_before == ProductStatus.MODERATED:
+        emit_sku_out_of_stock(sku.id)
+
+    await db.commit()
