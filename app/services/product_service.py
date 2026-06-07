@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -167,6 +167,45 @@ async def delete_product(
     product.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
+
+
+async def list_seller_products(
+    db: AsyncSession,
+    seller_id: uuid.UUID,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    status: ProductStatus | None = None,
+    include_deleted: bool = False,
+    search: str | None = None,
+) -> tuple[list[Product], int]:
+    conditions = [Product.seller_id == seller_id]
+
+    if not include_deleted:
+        conditions.append(Product.deleted.is_(False))
+
+    if status is not None:
+        conditions.append(Product.status == status)
+
+    if search:
+        pattern = f"%{search}%"
+        conditions.append(Product.title.ilike(pattern))
+
+    count_stmt = select(func.count()).select_from(Product).where(*conditions)
+    total = (await db.execute(count_stmt)).scalar_one()
+
+    stmt = (
+        select(Product)
+        .where(*conditions)
+        .options(selectinload(Product.skus))
+        .order_by(Product.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    result = await db.execute(stmt)
+    products = list(result.scalars().unique().all())
+
+    return products, total
 
 
 async def update_sku(
