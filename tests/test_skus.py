@@ -411,3 +411,170 @@ async def test_missing_price_returns_422(auth_headers):
     body = resp.json()
     assert {"code", "message"} <= set(body.keys())
     assert body["code"] == "VALIDATION_ERROR"
+
+
+# ─── DELETE /api/v1/skus/{sku_id} ─────────────────────────────────────────────
+
+SKU_ID = uuid.uuid4()
+
+
+def _make_sku_for_delete(
+    product_status: ProductStatus = ProductStatus.MODERATED,
+    reserved_quantity: int = 0,
+    active_quantity: int = 0,
+    seller_id: uuid.UUID = SELLER_ID,
+) -> tuple[MagicMock, MagicMock]:
+    product = MagicMock(spec=Product)
+    product.id = PRODUCT_ID
+    product.seller_id = seller_id
+    product.status = product_status
+    product.title = "Test Product"
+    product.category_id = CATEGORY_ID
+
+    sku = MagicMock(spec=SKU)
+    sku.id = SKU_ID
+    sku.product_id = PRODUCT_ID
+    sku.product = product
+    sku.reserved_quantity = reserved_quantity
+    sku.active_quantity = active_quantity
+    sku.name = "Test SKU"
+    sku.price = 99900
+
+    return sku, product
+
+
+def _db_with_sku_and_count(sku: MagicMock, remaining_count: int = 0) -> AsyncMock:
+    db = AsyncMock()
+    first_result = MagicMock()
+    first_result.scalar_one_or_none.return_value = sku
+    second_result = MagicMock()
+    second_result.scalar_one.return_value = remaining_count
+    db.execute = AsyncMock(side_effect=[first_result, second_result])
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+    return db
+
+
+async def test_delete_sku_succeeds(auth_headers):
+    """Happy path: SKU удалён, 204, без side-эффектов."""
+    sku, product = _make_sku_for_delete(
+        product_status=ProductStatus.MODERATED,
+        reserved_quantity=0,
+        active_quantity=0,
+    )
+    # Есть ещё SKU → not last
+    db = _db_with_sku_and_count(sku, remaining_count=1)
+    app.dependency_overrides[get_db] = lambda: db
+
+    with (
+        patch("app.services.sku_service.emit_product_deleted") as mock_deleted,
+        patch("app.services.sku_service.emit_sku_out_of_stock") as mock_oos,
+    ):
+        async with await make_client() as client:
+            resp = await client.delete(f"/api/v1/skus/{SKU_ID}", headers=auth_headers)
+
+    assert resp.status_code == 204
+    db.delete.assert_called_once_with(sku)
+    mock_deleted.assert_not_called()
+    mock_oos.assert_not_called()
+
+
+async def test_delete_sku_with_active_reserves_returns_409(auth_headers):
+    """reserved_quantity > 0 → 409 CONFLICT, SKU не удалён."""
+    sku, product = _make_sku_for_delete(reserved_quantity=5)
+    db = _db_with_sku_and_count(sku)
+    app.dependency_overrides[get_db] = lambda: db
+
+    with (
+        patch("app.services.sku_service.emit_product_deleted") as mock_deleted,
+        patch("app.services.sku_service.emit_sku_out_of_stock") as mock_oos,
+    ):
+        async with await make_client() as client:
+            resp = await client.delete(f"/api/v1/skus/{SKU_ID}", headers=auth_headers)
+
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["code"] == "CONFLICT"
+    assert "reserves" in body["message"].lower()
+    db.delete.assert_not_called()
+    mock_deleted.assert_not_called()
+    mock_oos.assert_not_called()
+
+
+async def test_last_sku_on_moderation_transitions_product_to_created(auth_headers):
+    """
+    Последний SKU удалён + товар ON_MODERATION → товар CREATED + событие DELETED.
+    """
+    sku, product = _make_sku_for_delete(product_status=ProductStatus.ON_MODERATION)
+    # Это последний SKU
+    db = _db_with_sku_and_count(sku, remaining_count=0)
+    app.dependency_overrides[get_db] = lambda: db
+
+    with (
+        patch("app.services.sku_service.emit_product_deleted") as mock_deleted,
+        patch("app.services.sku_service.emit_sku_out_of_stock") as mock_oos,
+    ):
+        async with await make_client() as client:
+            resp = await client.delete(f"/api/v1/skus/{SKU_ID}", headers=auth_headers)
+
+    assert resp.status_code == 204
+    assert product.status == ProductStatus.CREATED
+    db.delete.assert_called_once_with(sku)
+    mock_deleted.assert_called_once_with(
+        product_id=product.id,
+        seller_id=product.seller_id,
+        category_id=product.category_id,
+        title=product.title,
+    )
+    mock_oos.assert_not_called()
+
+
+async def test_delete_sku_hard_blocked_product_returns_403(auth_headers):
+    """Товар HARD_BLOCKED → 403 FORBIDDEN, SKU не удалён."""
+    sku, product = _make_sku_for_delete(product_status=ProductStatus.HARD_BLOCKED)
+    db = _db_with_sku_and_count(sku)
+    # db.execute может быть вызван только один раз (первая проверка выбрасывает исключение)
+    # но side_effect с 2 элементами не сломается, т.к. второй execute не дойдёт
+    app.dependency_overrides[get_db] = lambda: db
+
+    with (
+        patch("app.services.sku_service.emit_product_deleted") as mock_deleted,
+        patch("app.services.sku_service.emit_sku_out_of_stock") as mock_oos,
+    ):
+        async with await make_client() as client:
+            resp = await client.delete(f"/api/v1/skus/{SKU_ID}", headers=auth_headers)
+
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["code"] == "FORBIDDEN"
+    assert "hard-blocked" in body["message"].lower()
+    db.delete.assert_not_called()
+    mock_deleted.assert_not_called()
+    mock_oos.assert_not_called()
+
+
+async def test_sku_out_of_stock_event_on_moderated_product(auth_headers):
+    """
+    active_quantity > 0 + товар MODERATED → событие SKU_OUT_OF_STOCK в B2C.
+    Товар не теряет последний SKU (remaining_count=1), статус не меняется.
+    """
+    sku, product = _make_sku_for_delete(
+        product_status=ProductStatus.MODERATED,
+        active_quantity=5,
+    )
+    # Есть ещё SKU → not last
+    db = _db_with_sku_and_count(sku, remaining_count=1)
+    app.dependency_overrides[get_db] = lambda: db
+
+    with (
+        patch("app.services.sku_service.emit_product_deleted") as mock_deleted,
+        patch("app.services.sku_service.emit_sku_out_of_stock") as mock_oos,
+    ):
+        async with await make_client() as client:
+            resp = await client.delete(f"/api/v1/skus/{SKU_ID}", headers=auth_headers)
+
+    assert resp.status_code == 204
+    assert product.status == ProductStatus.MODERATED  # не изменился
+    db.delete.assert_called_once_with(sku)
+    mock_deleted.assert_not_called()
+    mock_oos.assert_called_once_with(sku.id)
