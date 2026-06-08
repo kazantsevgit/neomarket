@@ -20,6 +20,7 @@ ADR (для PR):
 import asyncio
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -169,10 +170,10 @@ async def hard_block_product(
 
     1. Загружаем товар.
     2. Проверяем, что он не в HARD_BLOCKED (терминальный статус).
-    3. Загружаем причину блокировки.
-    4. Проверяем hard_block=true.
-    5. UPDATE product: status=HARD_BLOCKED, blocking_reason, field_reports.
-    6. Каскадное событие в B2C.
+    3. Проверяем статус ON_MODERATION (IN_REVIEW в терминах тикета).
+    4. Загружаем причину блокировки.
+    5. Проверяем hard_block=true.
+    6. Эмитируем событие BLOCKED + hard_block=true в B2B-обработчик.
     7. Ответ 200.
     """
     product: Optional[Product] = await db.get(Product, product_id)
@@ -188,6 +189,15 @@ async def hard_block_product(
             detail={
                 "code": "ALREADY_HARD_BLOCKED",
                 "message": "Product is already HARD_BLOCKED",
+            },
+        )
+
+    if product.status != ProductStatus.ON_MODERATION:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "WRONG_STATUS",
+                "message": f"Product must be ON_MODERATION, got {product.status.value}",
             },
         )
 
@@ -208,31 +218,22 @@ async def hard_block_product(
             },
         )
 
-    product.status = ProductStatus.HARD_BLOCKED
-    product.blocking_reason_id = reason.id
-    product.blocking_reason = {
-        "id": str(reason.id),
-        "code": reason.code,
-        "title": reason.title,
-        "hard_block": True,
-    }
-    product.moderator_comment = request.moderator_comment
+    # ── Эмитируем событие BLOCKED + hard_block=true в B2B-обработчик ──
+    event = ModerationEventRequest(
+        idempotency_key=uuid.uuid4(),
+        product_id=product_id,
+        event_type=ModerationEventType.BLOCKED,
+        hard_block=True,
+        blocking_reason_id=request.blocking_reason_id,
+        moderator_comment=request.moderator_comment,
+        field_reports=request.field_reports,
+        occurred_at=datetime.now(timezone.utc),
+    )
+    await apply_moderation_decision(db=db, payload=event)
 
-    if request.field_reports:
-        product.field_reports = [
-            {
-                "field_name": fr.field_name,
-                "sku_id": str(fr.sku_id) if fr.sku_id else None,
-                "comment": fr.comment,
-            }
-            for fr in request.field_reports
-        ]
-    else:
-        product.field_reports = []
-
-    await db.commit()
     logger.info("hard_blocked product_id=%s reason=%s", product_id, reason.code)
 
-    emit_product_blocked_to_b2c(product.id)
-
-    return DeclineResponse(product_id=product.id, status=ProductStatus.HARD_BLOCKED.value)
+    return DeclineResponse(
+        product_id=product_id,
+        status=ProductStatus.HARD_BLOCKED.value,
+    )
