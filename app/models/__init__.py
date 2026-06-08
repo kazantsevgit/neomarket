@@ -3,3 +3,4 @@
 from app.models.invoice import Invoice, InvoiceItem  # noqa: F401
 from app.models.ticket_field_report import TicketFieldReport  # noqa: F401
 from app.models.ticket import Ticket, TicketKind, TicketStatus  # noqa: F401
+from app.models.product_subscription import ProductSubscription  # noqa: F401
