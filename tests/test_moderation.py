@@ -571,6 +571,26 @@ async def test_decline_already_hard_blocked_returns_409(override_db):
     assert resp.json()["code"] == "ALREADY_HARD_BLOCKED"
 
 
+async def test_decline_wrong_status_returns_409(override_db):
+    """unhappy: decline на товаре не в ON_MODERATION → 409 WRONG_STATUS."""
+    product = make_product(status=ProductStatus.MODERATED)
+    reason  = make_reason(hard_block=True)
+
+    db = _db_for_decline(product, reason=reason)
+    app.dependency_overrides[get_db] = lambda: db
+
+    async with await make_client() as client:
+        resp = await client.post(
+            _DECLINE_URL,
+            json=DECLINE_BODY,
+            headers=SERVICE_KEY_HEADER,
+        )
+
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "WRONG_STATUS"
+    assert "ON_MODERATION" in resp.json()["message"]
+
+
 async def test_decline_with_field_reports(override_db):
     """
     happy: decline с field_reports сохраняет их на товаре.
