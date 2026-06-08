@@ -576,28 +576,53 @@ paths:
       tags: [Favorites]
       summary: Подписаться на уведомления о товаре
       description: |
-        События: появление в наличии, изменение цены.
-        Реализация — push/email-уведомления через notification-сервис.
+        Создаёт подписку на уведомления о товаре.
+        user_id извлекается ТОЛЬКО из JWT (claim sub),
+        передача в query/body запрещена (IDOR).
+        События: IN_STOCK — товар появился в наличии,
+        PRICE_DOWN — снижение цены.
+        Автоматическая отправка уведомлений — отдельный модуль,
+        в MVP не реализуется.
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                events:
-                  type: array
-                  items:
-                    type: string
-                    enum: [BACK_IN_STOCK, PRICE_DROP]
-                  default: [BACK_IN_STOCK, PRICE_DROP]
+              $ref: "#/components/schemas/SubscribeRequest"
       responses:
-        "204": { description: Подписан }
+        "201":
+          description: Подписка создана
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionResponse"
+        "400":
+          description: Невалидный notify_on (пустой или неизвестное значение)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Товар не найден
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Подписка уже существует
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       tags: [Favorites]
-      summary: Отписаться
+      summary: Отписаться от уведомлений о товаре
+      description: |
+        Удаляет подписку пользователя на уведомления о товаре.
+        user_id — только из JWT.
       responses:
         "204": { description: Отписан }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   # -------------------- ORDERS --------------------
   /api/v1/orders:
@@ -1415,3 +1440,30 @@ components:
         product_id: { type: string, format: uuid }
         old_price: { type: integer }
         new_price: { type: integer }
+
+    # -------- Подписки на товары --------
+    SubscribeRequest:
+      type: object
+      required: [notify_on]
+      properties:
+        notify_on:
+          type: array
+          description: Список типов событий для уведомления
+          minItems: 1
+          items:
+            type: string
+            enum: [IN_STOCK, PRICE_DOWN]
+
+    SubscriptionResponse:
+      type: object
+      required: [id, user_id, product_id, notify_on, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        notify_on:
+          type: array
+          items:
+            type: string
+            enum: [IN_STOCK, PRICE_DOWN]
+        created_at: { type: string, format: date-time }

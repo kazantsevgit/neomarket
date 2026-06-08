@@ -6,7 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies.auth import get_current_user_id
 from app.dependencies.db import get_db
 from app.schemas.favorite import PaginatedCatalogProducts
+from app.schemas.subscription import SubscribeRequest, SubscriptionResponse
 from app.services.favorite_service import add_favorite, get_favorites, remove_favorite
+from app.services.subscription_service import (
+    create_subscription,
+    delete_subscription,
+)
 
 router = APIRouter(prefix="/api/v1/favorites", tags=["Favorites"])
 
@@ -44,3 +49,35 @@ async def remove_favorite_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     await remove_favorite(db=db, user_id=user_id, product_id=product_id)
+
+
+@router.post(
+    "/{product_id}/subscribe",
+    status_code=status.HTTP_201_CREATED,
+    response_model=SubscriptionResponse,
+)
+async def subscribe_endpoint(
+    product_id: uuid.UUID,
+    body: SubscribeRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> SubscriptionResponse:
+    return await create_subscription(
+        db=db,
+        user_id=user_id,
+        product_id=product_id,
+        body=body,
+    )
+
+
+@router.delete(
+    "/{product_id}/subscribe",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def unsubscribe_endpoint(
+    product_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await delete_subscription(db=db, user_id=user_id, product_id=product_id)
