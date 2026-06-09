@@ -54,7 +54,7 @@ async def create_invoice(
         if item.quantity <= 0:
             raise invalid_request("quantity must be > 0")
 
-    invoice = Invoice(seller_id=seller_id, status="PENDING")
+    invoice = Invoice(seller_id=seller_id, status="CREATED")
     db.add(invoice)
     await db.flush()
 
@@ -77,8 +77,10 @@ async def create_invoice(
 def invoice_to_response(invoice: Invoice) -> InvoiceResponse:
     return InvoiceResponse(
         id=invoice.id,
+        seller_id=invoice.seller_id,
         status=invoice.status,
         created_at=invoice.created_at,
+        updated_at=invoice.updated_at,
         items=[
             {
                 "id": item.id,
