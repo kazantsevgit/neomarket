@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Integer, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
 
@@ -38,6 +38,10 @@ class CartItem(Base):
 
     # Цена на момент добавления (для подсветки изменений; сама цена актуализируется на GET).
     unit_price_at_add: Mapped[int | None] = Column(Integer, nullable=True)
+
+    # Причина недоступности (PRODUCT_BLOCKED, PRODUCT_DELETED, OUT_OF_STOCK),
+    # устанавливается обработчиком событий от B2B.
+    unavailable_reason: Mapped[str | None] = Column(String, nullable=True)
 
     created_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = Column(
