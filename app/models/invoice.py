@@ -1,11 +1,19 @@
+import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, Enum as SAEnum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
+
+class InvoiceStatus(str, enum.Enum):
+    CREATED = "CREATED"
+    PARTIALLY_ACCEPTED = "PARTIALLY_ACCEPTED"
+    ACCEPTED = "ACCEPTED"
+    CANCELLED = "CANCELLED"
 
 
 def _utcnow() -> datetime:
@@ -17,7 +25,7 @@ class Invoice(Base):
 
     id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     seller_id  = Column(UUID(as_uuid=True), nullable=False, index=True)
-    status     = Column(String(50), nullable=False, default="PENDING")
+    status     = Column(SAEnum(InvoiceStatus), nullable=False, default=InvoiceStatus.CREATED)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
     accepted_at = Column(DateTime(timezone=True), nullable=True)

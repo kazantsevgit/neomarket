@@ -55,8 +55,10 @@ def make_sku(
 def make_invoice(sku_id: uuid.UUID = SKU_ID, sku_name: str = "256GB Black") -> MagicMock:
     invoice = MagicMock()
     invoice.id = INVOICE_ID
-    invoice.status = "PENDING"
+    invoice.seller_id = SELLER_ID
+    invoice.status = "CREATED"
     invoice.created_at = _NOW
+    invoice.updated_at = _NOW
     item = MagicMock()
     item.id = INVOICE_ITEM_ID
     item.sku_id = sku_id
@@ -101,7 +103,7 @@ async def make_client():
 
 
 async def test_create_invoice_with_moderated_sku_returns_201(auth_headers):
-    """Happy path: создание накладной с валидным MODERATED SKU → 201 + статус PENDING."""
+    """Happy path: создание накладной с валидным MODERATED SKU → 201 + статус CREATED."""
     import datetime
 
     sku = make_sku()
@@ -117,6 +119,8 @@ async def test_create_invoice_with_moderated_sku_returns_201(auth_headers):
             obj.id = INVOICE_ID
         if obj.created_at is None:
             obj.created_at = datetime.datetime.now(datetime.timezone.utc)
+        if obj.updated_at is None:
+            obj.updated_at = datetime.datetime.now(datetime.timezone.utc)
         if not obj.items:
             item = MagicMock()
             item.id = INVOICE_ITEM_ID
@@ -139,14 +143,16 @@ async def test_create_invoice_with_moderated_sku_returns_201(auth_headers):
 
     assert resp.status_code == 201
     data = resp.json()
-    assert data["status"] == "PENDING"
+    assert data["status"] == "CREATED"
     assert len(data["items"]) == 1
     assert data["items"][0]["sku_id"] == str(SKU_ID)
     assert data["items"][0]["sku_name"] == "256GB Black"
     assert data["items"][0]["quantity"] == 10
     assert data["items"][0]["accepted_quantity"] is None
-    assert "id" in data
+    assert data["id"] == str(INVOICE_ID)
+    assert data["seller_id"] == str(SELLER_ID)
     assert "created_at" in data
+    assert "updated_at" in data
 
 
 async def test_empty_items_returns_400(auth_headers):

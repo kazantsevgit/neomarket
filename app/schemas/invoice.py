@@ -27,8 +27,10 @@ class InvoiceItemResponse(BaseModel):
 
 class InvoiceResponse(BaseModel):
     id: uuid.UUID
+    seller_id: uuid.UUID
     status: str
     created_at: datetime
+    updated_at: datetime
     items: list[InvoiceItemResponse]
 
     class Config:
