@@ -14,9 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_seller_id  # reuse — здесь user_id
 from app.dependencies.db import get_db
+from app.dependencies.service_key import require_catalog_service_key
 from app.schemas.orders import CheckoutRequest, OrderResponse
 from app.services.order_service import create_order
 from app.services.cancel_service import cancel_order
+from app.services.deliver_service import deliver_order
 
 import uuid
 
@@ -60,3 +62,26 @@ async def cancel(
     Чужой заказ → 404 (не 403, IDOR-защита).
     """
     return await cancel_order(db=db, order_id=order_id, user_id=user_id)
+
+
+@router.post(
+    "/{order_id}/deliver",
+    response_model=OrderResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_catalog_service_key)],
+)
+async def deliver(
+    order_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> OrderResponse:
+    """
+    POST /api/v1/orders/{id}/deliver — Отметить заказ как доставленный.
+
+    Оператор (B2C Admin) отмечает заказ доставленным → B2C вызывает
+    POST /api/v1/inventory/fulfill → B2B для списания резерва.
+
+    Допустимый статус для перехода: DELIVERING.
+    Если fulfill в B2B упал — заказ остаётся DELIVERED, retry асинхронно.
+    Аутентификация: X-Service-Key (admin/internal).
+    """
+    return await deliver_order(db=db, order_id=order_id)
