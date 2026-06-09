@@ -200,6 +200,6 @@ async def delete_sku(
 
     # Side-эффект 2: active_quantity > 0 и товар MODERATED → SKU_OUT_OF_STOCK
     if active_quantity > 0 and product_status_before == ProductStatus.MODERATED:
-        emit_sku_out_of_stock(sku.id)
+        emit_sku_out_of_stock(sku.id, sku.product_id, 0)
 
     await db.commit()

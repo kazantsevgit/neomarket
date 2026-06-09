@@ -54,13 +54,19 @@ UNRESERVE_BODY = {
 
 # ─── Фабрики ─────────────────────────────────────────────────────────────────
 
+SKU1_PRODUCT_ID = uuid.uuid4()
+SKU2_PRODUCT_ID = uuid.uuid4()
+
+
 def make_sku(
     sku_id: uuid.UUID,
     stock_quantity: int = 10,
     reserved_quantity: int = 0,
+    product_id: uuid.UUID = SKU1_PRODUCT_ID,
 ) -> MagicMock:
     s = MagicMock(spec=SKU)
     s.id               = sku_id
+    s.product_id       = product_id
     s.stock_quantity   = stock_quantity
     s.reserved_quantity = reserved_quantity
 
@@ -266,7 +272,7 @@ async def test_sku_out_of_stock_event_emitted(override_db):
 
     assert resp.status_code == 200
     # Событие должно быть вызвано ровно для SKU_1
-    mock_emit.assert_called_once_with(SKU_ID_1)
+    mock_emit.assert_called_once_with(SKU_ID_1, SKU1_PRODUCT_ID, 0)
 
 
 # ─── Unreserve ────────────────────────────────────────────────────────────────
