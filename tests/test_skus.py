@@ -577,4 +577,4 @@ async def test_sku_out_of_stock_event_on_moderated_product(auth_headers):
     assert product.status == ProductStatus.MODERATED  # не изменился
     db.delete.assert_called_once_with(sku)
     mock_deleted.assert_not_called()
-    mock_oos.assert_called_once_with(sku.id)
+    mock_oos.assert_called_once_with(sku.id, sku.product_id, 0)
