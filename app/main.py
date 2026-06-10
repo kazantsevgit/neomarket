@@ -18,6 +18,7 @@ from app.routers.favorites import router as favorites_router
 from app.routers.orders import router as orders_router
 from app.routers.cart import router as cart_router
 from app.routers.auth import router as auth_router
+from app.routers.b2b_events import router as b2b_events_router
 from app.routers.invoices import router as invoices_router
 from app.routers.events import router as events_router
 
@@ -35,8 +36,12 @@ app.include_router(favorites_router)
 app.include_router(orders_router)
 app.include_router(cart_router)
 app.include_router(auth_router)
+<<<<<<< HEAD
+app.include_router(b2b_events_router)
+=======
 app.include_router(invoices_router)
 app.include_router(events_router)
+>>>>>>> main
 
 
 @app.exception_handler(HTTPException)
