@@ -40,7 +40,7 @@ async def create_subscription(
     subscription = ProductSubscription(
         user_id=user_id,
         product_id=product_id,
-        notify_on=[e.value for e in body.notify_on],
+        events=[e.value for e in body.events],
     )
     db.add(subscription)
     await db.commit()

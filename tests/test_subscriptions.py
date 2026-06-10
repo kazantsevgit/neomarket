@@ -30,12 +30,12 @@ def make_product(*, deleted=False):
     return p
 
 
-def make_subscription(*, notify_on=None):
+def make_subscription(*, events=None):
     s = MagicMock(spec=ProductSubscription)
     s.id = uuid.uuid4()
     s.user_id = USER_ID
     s.product_id = PRODUCT_ID
-    s.notify_on = notify_on or ["IN_STOCK", "PRICE_DOWN"]
+    s.events = events or ["BACK_IN_STOCK", "PRICE_DROP"]
     s.created_at = None
     return s
 
@@ -86,13 +86,13 @@ async def test_subscribe_returns_201_with_notify_on(auth_headers, mock_db):
     async with await make_client() as client:
         resp = await client.post(
             f"/api/v1/favorites/{PRODUCT_ID}/subscribe",
-            json={"notify_on": ["IN_STOCK", "PRICE_DOWN"]},
+            json={"events": ["BACK_IN_STOCK", "PRICE_DROP"]},
             headers=auth_headers,
         )
 
     assert resp.status_code == 201
     data = resp.json()
-    assert data["notify_on"] == ["IN_STOCK", "PRICE_DOWN"]
+    assert data["events"] == ["BACK_IN_STOCK", "PRICE_DROP"]
     assert data["user_id"] == str(USER_ID)
     assert data["product_id"] == str(PRODUCT_ID)
     mock_db.add.assert_called_once()
@@ -117,7 +117,7 @@ async def test_duplicate_subscription_returns_409(auth_headers, mock_db):
     async with await make_client() as client:
         resp = await client.post(
             f"/api/v1/favorites/{PRODUCT_ID}/subscribe",
-            json={"notify_on": ["IN_STOCK"]},
+            json={"events": ["BACK_IN_STOCK"]},
             headers=auth_headers,
         )
 
@@ -132,7 +132,7 @@ async def test_invalid_notify_on_returns_400(auth_headers, mock_db):
     async with await make_client() as client:
         resp = await client.post(
             f"/api/v1/favorites/{PRODUCT_ID}/subscribe",
-            json={"notify_on": ["INVALID_EVENT"]},
+            json={"events": ["INVALID_EVENT"]},
             headers=auth_headers,
         )
 
@@ -143,7 +143,7 @@ async def test_empty_notify_on_returns_400(auth_headers, mock_db):
     async with await make_client() as client:
         resp = await client.post(
             f"/api/v1/favorites/{PRODUCT_ID}/subscribe",
-            json={"notify_on": []},
+            json={"events": []},
             headers=auth_headers,
         )
 
@@ -156,7 +156,7 @@ async def test_subscribe_to_unknown_product_returns_404(auth_headers, mock_db):
     async with await make_client() as client:
         resp = await client.post(
             f"/api/v1/favorites/{PRODUCT_ID}/subscribe",
-            json={"notify_on": ["IN_STOCK"]},
+            json={"events": ["BACK_IN_STOCK"]},
             headers=auth_headers,
         )
 
@@ -181,7 +181,7 @@ async def test_user_id_from_query_is_ignored(auth_headers, mock_db):
     async with await make_client() as client:
         resp = await client.post(
             f"/api/v1/favorites/{PRODUCT_ID}/subscribe?user_id={other_user}",
-            json={"notify_on": ["IN_STOCK"]},
+            json={"events": ["BACK_IN_STOCK"]},
             headers=auth_headers,
         )
 

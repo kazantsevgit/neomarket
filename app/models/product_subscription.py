@@ -17,7 +17,7 @@ class ProductSubscription(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), nullable=False)
     product_id = Column(UUID(as_uuid=True), nullable=False)
-    notify_on = Column(ARRAY(TEXT), nullable=False)
+    events = Column(ARRAY(TEXT), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     __table_args__ = (
