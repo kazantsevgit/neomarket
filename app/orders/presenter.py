@@ -3,7 +3,21 @@
 from __future__ import annotations
 
 from app.models.order import Order
-from app.schemas.orders import OrderItemResponse, OrderResponse
+from app.schemas.orders import AddressResponse, OrderItemResponse, OrderResponse
+
+
+def _build_address(delivery_address: str | None) -> AddressResponse | None:
+    """
+    Временный маппинг строки адреса → объект AddressResponse.
+
+    Пока адрес хранится в Order.delivery_address (Text), оборачиваем строку
+    в объект с полем street. Остальные поля — None-заглушки.
+    После миграции на таблицу Address или колонки-снапшоты city/street/building
+    читать реальные значения и убрать этот маппинг.
+    """
+    if delivery_address is None:
+        return None
+    return AddressResponse(street=delivery_address)
 
 
 def order_to_response(order: Order) -> OrderResponse:
@@ -29,7 +43,7 @@ def order_to_response(order: Order) -> OrderResponse:
         items=items,
         subtotal=subtotal,
         total=order.total_amount,
-        delivery_address=order.delivery_address,
+        address=_build_address(order.delivery_address),
         created_at=order.created_at,
         updated_at=order.updated_at,
     )

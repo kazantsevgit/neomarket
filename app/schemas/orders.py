@@ -47,6 +47,14 @@ class OrderItemResponse(BaseModel):
     line_total: int
 
 
+class AddressResponse(BaseModel):
+    id: Optional[uuid.UUID] = None
+    country: Optional[str] = None
+    city: Optional[str] = None
+    street: Optional[str] = None
+    building: Optional[str] = None
+
+
 class OrderResponse(BaseModel):
     id: uuid.UUID
     buyer_id: uuid.UUID
@@ -54,7 +62,7 @@ class OrderResponse(BaseModel):
     items: List[OrderItemResponse]
     subtotal: int
     total: int
-    delivery_address: Optional[str] = None
+    address: Optional[AddressResponse] = None
     created_at: datetime
     updated_at: datetime
 
