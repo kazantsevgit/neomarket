@@ -215,6 +215,30 @@ async def reserve(
     raise B2BUnavailableError(f"B2B returned {resp.status_code}")
 
 
+async def fetch_product_from_b2b(product_id: uuid.UUID) -> dict | None:
+    """
+    GET {b2b_url}/api/v1/products/{product_id} от имени Moderation.
+
+    Возвращает dict с данными товара или None при 404.
+    Бросает B2BUnavailableError при сетевых проблемах или 5xx.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{settings.B2B_URL}/api/v1/products/{product_id}",
+                headers={"X-Service-Key": settings.MOD_TO_B2B_KEY},
+            )
+    except httpx.RequestError as exc:
+        raise B2BUnavailableError(str(exc)) from exc
+
+    if resp.status_code == 404:
+        return None
+    if resp.status_code >= 500:
+        raise B2BUnavailableError(f"B2B returned {resp.status_code}")
+    resp.raise_for_status()
+    return resp.json()
+
+
 async def unreserve(
     order_id: uuid.UUID,
     items: List[Dict[str, Any]],
