@@ -269,7 +269,7 @@ async def test_checkout_creates_paid_order_with_fixed_prices(override_db):
     assert data["total"] == expected_total
     assert data["subtotal"] == expected_total
     assert data["buyer_id"] == str(USER_ID)
-    assert data["delivery_address"] == f"address:{ADDRESS_ID}"
+    assert data["address"]["street"] == f"address:{ADDRESS_ID}"
     assert all("name" in item for item in data["items"])
 
 
