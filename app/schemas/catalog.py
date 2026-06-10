@@ -3,14 +3,15 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.product import CatalogImageRef
+
 
 class ProductShortItem(BaseModel):
     id: uuid.UUID
-    title: str
-    image: str | None = None
-    price: int
-    in_stock: bool = True
-    is_in_cart: bool = False
+    name: str
+    min_price: int
+    has_stock: bool = True
+    images: list[CatalogImageRef] = []
 
 
 class ProductShortListResponse(BaseModel):

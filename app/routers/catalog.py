@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.db import get_db
-from app.dependencies.filters import parse_filters_query
+from app.dependencies.filters import parse_catalog_filters_query
 from app.models.product import Product, ProductStatus
 from app.schemas.catalog import FacetsResponse, ProductShortListResponse
 from app.schemas.errors import VALID_SORTS, invalid_sort_error
@@ -32,33 +32,57 @@ def _validate_sort_param(sort: str | None) -> str | None:
 
 @router.get("/catalog/products", response_model=ProductShortListResponse)
 async def list_products(
-    category_id: uuid.UUID | None = None,
-    search: str | None = None,
+    q: str | None = None,
     sort: str | None = None,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    filters: dict | None = Depends(parse_filters_query),
+    filter: dict | None = Depends(parse_catalog_filters_query),
 ) -> ProductShortListResponse:
     validated_sort = _validate_sort_param(sort)
+
+    category_id = None
+    min_price = None
+    max_price = None
+    filters = None
+    if filter:
+        if "category_id" in filter:
+            category_id = uuid.UUID(filter["category_id"])
+        if "price_min" in filter:
+            min_price = int(filter["price_min"])
+        if "price_max" in filter:
+            max_price = int(filter["max_price"])
+        known = {"category_id", "price_min", "price_max", "seller_id"}
+        dyn_filters = {k: v for k, v in filter.items() if k not in known}
+        if dyn_filters:
+            filters = dyn_filters
+
     return await b2b_client.list_products(
         category_id=category_id,
-        search=search,
+        search=q,
         filters=filters,
         sort=validated_sort,
         limit=limit,
         offset=offset,
+        min_price=min_price,
+        max_price=max_price,
     )
 
 
 @router.get("/catalog/facets", response_model=FacetsResponse)
 async def get_catalog_facets(
     category_id: uuid.UUID | None = None,
-    search: str | None = None,
-    filters: dict | None = Depends(parse_filters_query),
+    q: str | None = None,
+    filter: dict | None = Depends(parse_catalog_filters_query),
 ) -> FacetsResponse:
+    filters = None
+    if filter:
+        known = {"category_id", "price_min", "price_max", "seller_id"}
+        dyn_filters = {k: v for k, v in filter.items() if k not in known}
+        if dyn_filters:
+            filters = dyn_filters
     return await b2b_client.get_facets(
         category_id=category_id,
-        search=search,
+        search=q,
         filters=filters,
     )
 
