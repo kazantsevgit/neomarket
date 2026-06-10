@@ -133,6 +133,11 @@ def _b2b_sku_to_cart_item(
     )
 
 
+async def get_user_cart_items(db: AsyncSession, user_id: uuid.UUID) -> list[CartItemDB]:
+    """Позиции корзины авторизованного покупателя (для checkout)."""
+    return await _get_cart_items(db, user_id=user_id, session_id=None)
+
+
 async def _get_cart_items(
     db: AsyncSession,
     *,

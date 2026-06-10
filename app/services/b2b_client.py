@@ -143,12 +143,40 @@ async def get_facets(
     return FacetsResponse.model_validate(resp.json())
 
 
+async def get_public_products_batch(
+    product_ids: List[uuid.UUID],
+) -> List[Dict[str, Any]]:
+    """
+    POST /api/v1/public/products/batch — карточки товаров для корзины/checkout.
+
+    Возвращает только публикуемые товары; отсутствующие в ответе — unavailable.
+    """
+    if not product_ids:
+        return []
+    payload = {"product_ids": [str(pid) for pid in product_ids]}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{settings.B2B_URL}/api/v1/public/products/batch",
+                json=payload,
+                headers=_b2b_headers(),
+            )
+    except httpx.RequestError as exc:
+        raise B2BUnavailableError(str(exc)) from exc
+
+    if resp.status_code == 200:
+        data = resp.json()
+        return data if isinstance(data, list) else data.get("items", [])
+
+    raise B2BUnavailableError(f"B2B returned {resp.status_code}")
+
+
 async def get_products_by_sku_ids(sku_ids: List[uuid.UUID]) -> List[Dict[str, Any]]:
     """
     GET /api/v1/public/skus/{sku_id} для каждого SKU.
 
-    Возвращает список dict с полями: id (sku), product_id, name (sku_name),
-    price, product (вложенный dict с title, status, deleted).
+    Возвращает SKUPublicResponse: id, product_id, name, price, active_quantity и т.д.
+    Вложенного product нет — статус берётся из /public/products/batch.
     """
     results: List[Dict[str, Any]] = []
     try:
