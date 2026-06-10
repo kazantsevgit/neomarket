@@ -13,15 +13,24 @@ from pydantic import BaseModel, Field
 
 # ── Request ───────────────────────────────────────────────────────────────────
 
-class CheckoutItem(BaseModel):
+class CheckoutItemSnapshot(BaseModel):
+    """Опциональный снапшот корзины для защиты от гонок (OpenAPI items_snapshot)."""
     sku_id: uuid.UUID
     quantity: int = Field(..., ge=1)
+    unit_price: int = Field(..., ge=0)
 
 
 class CheckoutRequest(BaseModel):
-    idempotency_key: uuid.UUID
-    items: List[CheckoutItem] = Field(..., min_length=1)
-    delivery_address: Optional[str] = None
+    address_id: uuid.UUID
+    payment_method_id: uuid.UUID
+    comment: Optional[str] = Field(None, max_length=1000)
+    items_snapshot: Optional[List[CheckoutItemSnapshot]] = None
+
+
+class CheckoutItem(BaseModel):
+    """Внутренняя позиция checkout — собирается из корзины покупателя."""
+    sku_id: uuid.UUID
+    quantity: int = Field(..., ge=1)
 
 
 # ── Response ──────────────────────────────────────────────────────────────────

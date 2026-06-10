@@ -12,7 +12,7 @@ def order_to_response(order: Order) -> OrderResponse:
             id=item.id,
             sku_id=item.sku_id,
             product_id=item.product_id,
-            name=item.sku_name,
+            name=f"{item.product_title} {item.sku_name}".strip() or item.sku_name,
             product_title=item.product_title,
             sku_name=item.sku_name,
             quantity=item.quantity,

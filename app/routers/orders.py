@@ -9,7 +9,7 @@ Endpoints:
 user_id берётся исключительно из JWT claims (IDOR-защита).
 """
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Header, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies.auth import get_current_seller_id  # reuse — здесь user_id
@@ -32,16 +32,23 @@ router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 )
 async def checkout(
     body: CheckoutRequest,
+    idempotency_key: uuid.UUID = Header(..., alias="Idempotency-Key"),
     user_id: uuid.UUID = Depends(get_current_seller_id),
     db: AsyncSession = Depends(get_db),
 ) -> OrderResponse:
     """
     POST /api/v1/orders — Оформление заказа (checkout).
 
-    Идемпотентен по idempotency_key: повторный запрос возвращает
+    Состав заказа берётся из корзины покупателя.
+    Идемпотентен по заголовку Idempotency-Key: повторный запрос возвращает
     существующий заказ (статус 201, тот же объект).
     """
-    return await create_order(db=db, user_id=user_id, payload=body)
+    return await create_order(
+        db=db,
+        user_id=user_id,
+        idempotency_key=idempotency_key,
+        payload=body,
+    )
 
 
 @router.post(
