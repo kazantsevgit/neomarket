@@ -185,29 +185,25 @@ async def test_guest_cart_merged_on_login(override_db):
     auth_item.user_id = USER_ID
     auth_item.session_id = None
 
-    result_guest_list = MagicMock()
-    scalar_proxy_guest = MagicMock()
-    scalar_proxy_guest.all.return_value = [guest_item]
-    result_guest_list.scalars.return_value = scalar_proxy_guest
+    merged_item = make_cart_item(quantity=3)
+    merged_item.user_id = USER_ID
+    merged_item.session_id = None
 
-    result_auth_list = MagicMock()
-    scalar_proxy_auth = MagicMock()
-    scalar_proxy_auth.all.return_value = [auth_item]
-    result_auth_list.scalars.return_value = scalar_proxy_auth
+    def _make_result(items):
+        r = MagicMock()
+        s = MagicMock()
+        s.all.return_value = items
+        r.scalars.return_value = s
+        return r
 
-    # get_cart_enriched после merge → снова вернём auth_item
-    result_after_merge = MagicMock()
-    scalar_proxy_after = MagicMock()
-    scalar_proxy_after.all.return_value = [auth_item]
-    result_after_merge.scalars.return_value = scalar_proxy_after
-
+    # Первые 2 вызова execute: guest_items, auth_items (merge).
+    # Остальные вызовы (get_cart_enriched) — merged_item.
     override_db.execute = AsyncMock(
         side_effect=[
-            result_guest_list,   # merge: guest items
-            result_auth_list,    # merge: auth items
-            result_after_merge,  # merge: get_cart_enriched inside login
-            result_after_merge,  # explicit GET /cart after login
-        ]
+            _make_result([guest_item]),
+            _make_result([auth_item]),
+            *[_make_result([merged_item]) for _ in range(10)],
+        ],
     )
     override_db.delete = AsyncMock()
 
@@ -224,17 +220,16 @@ async def test_guest_cart_merged_on_login(override_db):
                 headers={"X-Session-Id": str(GUEST_SESSION_ID)},
             )
 
-    assert resp.status_code == 200
-    token = resp.json()
-    assert token["user_id"] == str(USER_ID)
-    assert token["access_token"]
+            assert resp.status_code == 200
+            token = resp.json()
+            assert token["user_id"] == str(USER_ID)
+            assert token["access_token"]
 
-    # После логина merge должен был пройти: проверяем корзину уже с JWT
-    async with await _client() as c:
-        cart_resp = await c.get("/api/v1/cart", headers={"Authorization": f"Bearer {token['access_token']}"})
+            # После логина merge должен был пройти: проверяем корзину уже с JWT
+            cart_resp = await c.get("/api/v1/cart", headers={"Authorization": f"Bearer {token['access_token']}"})
 
-    assert cart_resp.status_code == 200
-    cart = cart_resp.json()
-    assert cart["items"][0]["quantity"] == 3
-    assert cart["subtotal"] == 500_00 * 3
+            assert cart_resp.status_code == 200
+            cart = cart_resp.json()
+            assert cart["items"][0]["quantity"] == 3
+            assert cart["subtotal"] == 500_00 * 3
 
