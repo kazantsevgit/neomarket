@@ -43,8 +43,15 @@ class CartItem(BaseModel):
     # computed on every GET /cart enrichment (не хранится в БД)
     unavailable_reason: Optional[str] = None
 
-    # MVP: картинка опциональна (может прийти из B2B, если endpoint поддерживает)
-    image: Optional[dict] = None
+    image: Optional["ImageRef"] = None
+
+
+class ImageRef(BaseModel):
+    id: uuid.UUID
+    url: str
+    ordering: int = 0
+    alt: Optional[str] = None
+    is_main: Optional[bool] = None
 
 
 class CartResponse(BaseModel):
@@ -71,4 +78,7 @@ class CartValidationResponse(BaseModel):
     is_valid: bool
     cart: CartResponse
     issues: list[CartValidationIssue] = []
+
+
+CartItem.model_rebuild()
 

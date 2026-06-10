@@ -36,12 +36,9 @@ app.include_router(favorites_router)
 app.include_router(orders_router)
 app.include_router(cart_router)
 app.include_router(auth_router)
-<<<<<<< HEAD
 app.include_router(b2b_events_router)
-=======
 app.include_router(invoices_router)
 app.include_router(events_router)
->>>>>>> main
 
 
 @app.exception_handler(HTTPException)
