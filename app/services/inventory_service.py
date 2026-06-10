@@ -40,13 +40,24 @@ def _fulfill_idem_key(order_id: uuid.UUID) -> uuid.UUID:
     return uuid.UUID(bytes=h)
 
 
-async def _send_out_of_stock(sku_id: uuid.UUID) -> None:
+async def _send_out_of_stock(
+    sku_id: uuid.UUID, product_id: uuid.UUID, available_quantity: int
+) -> None:
     """Реальная отправка SKU_OUT_OF_STOCK в B2C (fire-and-forget)."""
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             await client.post(
                 f"{settings.B2C_URL}/api/v1/b2b/events",
-                json={"event_type": "SKU_OUT_OF_STOCK", "sku_id": str(sku_id)},
+                json={
+                    "event_type": "SKU_OUT_OF_STOCK",
+                    "idempotency_key": str(uuid.uuid4()),
+                    "occurred_at": _utcnow().isoformat(),
+                    "payload": {
+                        "sku_id": str(sku_id),
+                        "product_id": str(product_id),
+                        "available_quantity": available_quantity,
+                    },
+                },
                 headers={"X-Service-Key": settings.SERVICE_KEY},
             )
         logger.info("SKU_OUT_OF_STOCK sent sku_id=%s", sku_id)
@@ -54,8 +65,10 @@ async def _send_out_of_stock(sku_id: uuid.UUID) -> None:
         logger.error("failed to send SKU_OUT_OF_STOCK sku_id=%s: %s", sku_id, exc)
 
 
-def emit_sku_out_of_stock(sku_id: uuid.UUID) -> None:
-    asyncio.create_task(_send_out_of_stock(sku_id))
+def emit_sku_out_of_stock(
+    sku_id: uuid.UUID, product_id: uuid.UUID, available_quantity: int
+) -> None:
+    asyncio.create_task(_send_out_of_stock(sku_id, product_id, available_quantity))
 
 
 async def reserve_inventory(
@@ -137,7 +150,8 @@ async def reserve_inventory(
 
     # ── 7. Emit SKU_OUT_OF_STOCK ─────────────────────────────────────────────
     for sku_id in out_of_stock_ids:
-        emit_sku_out_of_stock(sku_id)
+        sku = skus[sku_id]
+        emit_sku_out_of_stock(sku_id, sku.product_id, sku.active_quantity)
 
     # ── 8. Idempotency record ────────────────────────────────────────────────
     reserved_at = _utcnow()

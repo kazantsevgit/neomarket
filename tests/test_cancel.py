@@ -69,7 +69,7 @@ def make_order(
     o.id = order_id
     o.user_id = user_id
     o.status = order_status
-    o.total_amount = 12_999_000 * 2
+    o.total_amount = 12_999_000 * 2 + 12_999_000 * 1
     o.delivery_address = "г. Москва, ул. Тверская, д. 1"
     o.idempotency_key = uuid.uuid4()
     o.created_at = _NOW
@@ -124,7 +124,13 @@ async def test_cancel_paid_order_transitions_to_cancelled(override_db):
             )
 
     assert resp.status_code == 200
-    # Статус должен смениться на CANCELLED
+    data = resp.json()
+    assert data["status"] == "CANCELLED"
+    assert data["buyer_id"] == str(USER_ID)
+    assert data["subtotal"] > 0
+    assert data["total"] == data["subtotal"]
+    assert data["delivery_address"] == order.delivery_address
+    assert all("name" in item for item in data["items"])
     assert order.status == OrderStatus.CANCELLED
     db.commit.assert_awaited_once()
 

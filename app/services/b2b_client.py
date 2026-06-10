@@ -215,6 +215,7 @@ async def reserve(
     raise B2BUnavailableError(f"B2B returned {resp.status_code}")
 
 
+
 async def fetch_product_from_b2b(product_id: uuid.UUID) -> dict | None:
     """
     GET {b2b_url}/api/v1/products/{product_id} от имени Moderation.
@@ -238,6 +239,38 @@ async def fetch_product_from_b2b(product_id: uuid.UUID) -> dict | None:
     resp.raise_for_status()
     return resp.json()
 
+
+
+                
+async def fulfill(
+    order_id: uuid.UUID,
+    items: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    POST /api/v1/inventory/fulfill — списание резерва при DELIVERED.
+
+    Идемпотентен на стороне B2B по order_id: повторный вызов возвращает
+    200 {fulfilled: true} без изменений.
+    Бросает B2BUnavailableError при таймауте или 5xx.
+    """
+    payload = {
+        "order_id": str(order_id),
+        "items": items,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{settings.B2B_URL}/api/v1/inventory/fulfill",
+                json=payload,
+                headers=_b2b_headers(),
+            )
+    except httpx.RequestError as exc:
+        raise B2BUnavailableError(str(exc)) from exc
+
+    if resp.status_code == 200:
+        return resp.json()
+
+    raise B2BUnavailableError(f"B2B returned {resp.status_code}")
 
 async def unreserve(
     order_id: uuid.UUID,

@@ -65,6 +65,16 @@ class SKUCreate(BaseModel):
     characteristics: List[Characteristic] = Field(default_factory=list)
 
 
+class SKUUpdate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    price: int = Field(..., ge=0, description="Цена в копейках")
+    discount: int = Field(default=0, ge=0, description="Скидка в копейках")
+    cost_price: Optional[int] = Field(default=None)
+    article: Optional[str] = None
+    images: List[SKUImageCreate] = Field(default_factory=list)
+    characteristics: List[Characteristic] = Field(default_factory=list)
+
+
 class SKUResponse(BaseModel):
     """Seller-view SKU — соответствует neomarket-b2b.yaml:1284-1318."""
     id:               uuid.UUID
@@ -185,6 +195,32 @@ class ProductPublicShortResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ProductShortResponse(BaseModel):
+    """Короткая карточка товара для списка продавца (seller cabinet).
+    Соответствует neomarket-b2b.yaml ProductShortResponse + skus_count, total_active_quantity.
+    """
+    id: uuid.UUID
+    title: str
+    slug: str
+    status: str
+    category_id: uuid.UUID
+    deleted: bool
+    created_at: datetime
+    min_price: int | None = None
+    cover_image: str | None = None
+    skus_count: int = 0
+    total_active_quantity: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class ProductPaginatedResponse(BaseModel):
+    items: List[ProductShortResponse]
+    total_count: int
+    limit: int
+    offset: int
 
 
 class ProductPublicPaginatedResponse(BaseModel):

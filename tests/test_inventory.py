@@ -54,13 +54,19 @@ UNRESERVE_BODY = {
 
 # ─── Фабрики ─────────────────────────────────────────────────────────────────
 
+SKU1_PRODUCT_ID = uuid.uuid4()
+SKU2_PRODUCT_ID = uuid.uuid4()
+
+
 def make_sku(
     sku_id: uuid.UUID,
     stock_quantity: int = 10,
     reserved_quantity: int = 0,
+    product_id: uuid.UUID = SKU1_PRODUCT_ID,
 ) -> MagicMock:
     s = MagicMock(spec=SKU)
     s.id               = sku_id
+    s.product_id       = product_id
     s.stock_quantity   = stock_quantity
     s.reserved_quantity = reserved_quantity
 
@@ -266,7 +272,7 @@ async def test_sku_out_of_stock_event_emitted(override_db):
 
     assert resp.status_code == 200
     # Событие должно быть вызвано ровно для SKU_1
-    mock_emit.assert_called_once_with(SKU_ID_1)
+    mock_emit.assert_called_once_with(SKU_ID_1, SKU1_PRODUCT_ID, 0)
 
 
 # ─── Unreserve ────────────────────────────────────────────────────────────────
@@ -374,4 +380,158 @@ async def test_unreserve_without_prior_reserve_is_noop(override_db):
     assert resp.json()["status"] == "UNRESERVED"
     # SKU не тронут
     assert sku1.reserved_quantity == 5
+    db.commit.assert_not_awaited()
+
+
+# ─── Fulfill ──────────────────────────────────────────────────────────────────
+
+FULFILL_BODY = {
+    "order_id": str(ORDER_ID),
+    "items": [
+        {"sku_id": str(SKU_ID_1), "quantity": 2},
+        {"sku_id": str(SKU_ID_2), "quantity": 1},
+    ],
+}
+
+
+def _db_for_fulfill(
+    skus: list[MagicMock],
+    idem_existing=None,
+    ops: list | None = None,
+) -> AsyncMock:
+    """
+    Настройка fake_db для fulfill_inventory:
+    - get() → idem_existing (None → нет идемпотентности)
+    - execute() 1-й вызов → ReserveOperation для order_id
+    - execute() 2-й вызов → SKU с FOR UPDATE
+    """
+    db = AsyncMock()
+    db.get.return_value = idem_existing
+
+    ops_result = MagicMock()
+    ops_result.scalars.return_value.all.return_value = ops if ops is not None else []
+
+    sku_result = MagicMock()
+    sku_result.scalars.return_value.all.return_value = skus
+
+    db.execute.side_effect = [ops_result, sku_result]
+    return db
+
+
+async def test_fulfill_decreases_reserved_quantity(override_db):
+    """
+    happy: fulfill_decreases_reserved_quantity
+    reserved_quantity уменьшился на зарезервированное количество.
+    """
+    sku1 = make_sku(SKU_ID_1, stock_quantity=10, reserved_quantity=2)
+    sku2 = make_sku(SKU_ID_2, stock_quantity=5,  reserved_quantity=1)
+
+    ops = [
+        _make_reserve_op(SKU_ID_1, quantity=2),
+        _make_reserve_op(SKU_ID_2, quantity=1),
+    ]
+    db = _db_for_fulfill([sku1, sku2], ops=ops)
+    app.dependency_overrides[get_db] = lambda: db
+
+    async with await make_client() as client:
+        resp = await client.post(
+            "/api/v1/inventory/fulfill",
+            json=FULFILL_BODY,
+            headers=SERVICE_KEY_HEADER,
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "FULFILLED"
+    assert data["order_id"] == str(ORDER_ID)
+
+    assert sku1.reserved_quantity == 0
+    assert sku2.reserved_quantity == 0
+    assert sku1.stock_quantity == 8
+    assert sku2.stock_quantity == 4
+
+    db.commit.assert_awaited_once()
+
+
+async def test_active_quantity_unchanged(override_db):
+    """
+    happy: active_quantity_unchanged
+    active_quantity не изменился после fulfill:
+    stock и reserved уменьшаются на одинаковую величину.
+    """
+    sku1 = make_sku(SKU_ID_1, stock_quantity=10, reserved_quantity=2)
+    sku2 = make_sku(SKU_ID_2, stock_quantity=5,  reserved_quantity=1)
+
+    active_before_1 = sku1.active_quantity  # 8
+    active_before_2 = sku2.active_quantity  # 4
+
+    ops = [
+        _make_reserve_op(SKU_ID_1, quantity=2),
+        _make_reserve_op(SKU_ID_2, quantity=1),
+    ]
+    db = _db_for_fulfill([sku1, sku2], ops=ops)
+    app.dependency_overrides[get_db] = lambda: db
+
+    async with await make_client() as client:
+        resp = await client.post(
+            "/api/v1/inventory/fulfill",
+            json=FULFILL_BODY,
+            headers=SERVICE_KEY_HEADER,
+        )
+
+    assert resp.status_code == 200
+    assert sku1.active_quantity == active_before_1
+    assert sku2.active_quantity == active_before_2
+
+    db.commit.assert_awaited_once()
+
+
+async def test_idempotent_fulfill_no_double_deduction(override_db):
+    """
+    unhappy: idempotent_fulfill_no_double_deduction
+    Повторный запрос с тем же order_id → 200, данные не изменились.
+    """
+    sku1 = make_sku(SKU_ID_1, stock_quantity=10, reserved_quantity=2)
+
+    idem_record = MagicMock(spec=ReservationIdempotency)
+    idem_record.response_payload = {"status": "FULFILLED"}
+
+    db = _db_for_fulfill([sku1], idem_existing=idem_record, ops=[])
+    app.dependency_overrides[get_db] = lambda: db
+
+    async with await make_client() as client:
+        resp = await client.post(
+            "/api/v1/inventory/fulfill",
+            json=FULFILL_BODY,
+            headers=SERVICE_KEY_HEADER,
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "FULFILLED"
+
+    # Данные не изменились — execute и commit не вызывались
+    assert sku1.reserved_quantity == 2
+    assert sku1.stock_quantity == 10
+    db.execute.assert_not_awaited()
+    db.commit.assert_not_awaited()
+
+
+async def test_missing_service_key_returns_401(override_db):
+    """
+    unhappy: missing_service_key_returns_401
+    Запрос без X-Service-Key → 401.
+    """
+    db = AsyncMock()
+    app.dependency_overrides[get_db] = lambda: db
+
+    async with await make_client() as client:
+        resp = await client.post(
+            "/api/v1/inventory/fulfill",
+            json=FULFILL_BODY,
+            # headers без SERVICE_KEY_HEADER
+        )
+
+    assert resp.status_code == 401
+    data = resp.json()
+    assert data["code"] == "UNAUTHORIZED"
     db.commit.assert_not_awaited()

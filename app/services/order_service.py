@@ -30,12 +30,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import HTTPException, status
+from fastapi import status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.order import Order, OrderItem, OrderStatus
+from app.orders.errors import order_http_error
+from app.orders.presenter import order_to_response
 from app.schemas.orders import CheckoutItem, CheckoutRequest, OrderResponse
 from app.services.b2b_client import (
     B2BReserveFailedError,
@@ -110,13 +112,14 @@ async def create_order(
     # ── 0. Idempotency check ──────────────────────────────────────────────────
     existing = await _get_order_by_idempotency_key(db, payload.idempotency_key)
     if existing:
-        return OrderResponse.model_validate(existing)
+        return order_to_response(existing)
 
     # ── 1. Валидация (схема уже проверила quantity >= 1, items not empty) ─────
     if not payload.items:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_REQUEST", "message": "Список items не может быть пустым"},
+        raise order_http_error(
+            status.HTTP_400_BAD_REQUEST,
+            "INVALID_REQUEST",
+            "Список items не может быть пустым",
         )
 
     # ── 2. Получаем данные SKU из B2B ─────────────────────────────────────────
@@ -124,9 +127,10 @@ async def create_order(
     try:
         sku_data_list = await get_products_by_sku_ids(sku_ids)
     except B2BUnavailableError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "B2B_UNAVAILABLE", "message": "Сервис товаров временно недоступен"},
+        raise order_http_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "B2B_UNAVAILABLE",
+            "Сервис товаров временно недоступен",
         )
 
     sku_index = _build_sku_index(sku_data_list)
@@ -134,13 +138,11 @@ async def create_order(
     # ── 3. Проверка статусов/остатков (до резервирования) ────────────────────
     failed_items = _validate_skus_availability(payload.items, sku_index)
     if failed_items:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "RESERVE_FAILED",
-                "message": "Не удалось зарезервировать товары",
-                "failed_items": failed_items,
-            },
+        raise order_http_error(
+            status.HTTP_409_CONFLICT,
+            "RESERVE_FAILED",
+            "Не удалось зарезервировать товары",
+            failed_items=failed_items,
         )
 
     # ── 4. POST /reserve → B2B (all-or-nothing) ───────────────────────────────
@@ -156,18 +158,17 @@ async def create_order(
             items=reserve_items,
         )
     except B2BReserveFailedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "RESERVE_FAILED",
-                "message": "Не удалось зарезервировать товары",
-                "failed_items": exc.failed_items,
-            },
+        raise order_http_error(
+            status.HTTP_409_CONFLICT,
+            "RESERVE_FAILED",
+            "Не удалось зарезервировать товары",
+            failed_items=exc.failed_items,
         )
     except B2BUnavailableError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"code": "B2B_UNAVAILABLE", "message": "Сервис товаров временно недоступен"},
+        raise order_http_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "B2B_UNAVAILABLE",
+            "Сервис товаров временно недоступен",
         )
 
     # ── 5. Создаём Order + OrderItem в транзакции (фиксация цен) ─────────────
@@ -184,10 +185,10 @@ async def create_order(
         await db.rollback()
         existing = await _get_order_by_idempotency_key(db, payload.idempotency_key)
         if existing:
-            return OrderResponse.model_validate(existing)
+            return order_to_response(existing)
         raise
 
-    return OrderResponse.model_validate(order)
+    return order_to_response(order)
 
 
 async def _get_order_by_idempotency_key(
