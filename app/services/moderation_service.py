@@ -49,7 +49,12 @@ async def _send_product_blocked(product_id: uuid.UUID) -> None:
         async with httpx.AsyncClient(timeout=5.0) as client:
             await client.post(
                 f"{settings.B2C_URL}/api/v1/b2b/events",
-                json={"event_type": "PRODUCT_BLOCKED", "product_id": str(product_id)},
+                json={
+                    "idempotency_key": str(uuid.uuid4()),
+                    "occurred_at": datetime.now(timezone.utc).isoformat(),
+                    "event_type": "PRODUCT_BLOCKED",
+                    "payload": {"product_id": str(product_id)},
+                },
                 headers={"X-Service-Key": settings.B2C_SERVICE_KEY},
             )
         logger.info("PRODUCT_BLOCKED sent product_id=%s", product_id)
