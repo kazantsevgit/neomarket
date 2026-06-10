@@ -2,12 +2,10 @@ from fastapi import HTTPException, status
 
 
 VALID_SORTS: tuple[str, ...] = (
-    "rating",
-    "popularity",
     "price_asc",
     "price_desc",
-    "date_desc",
-    "discount_desc",
+    "popularity",
+    "new",
 )
 
 

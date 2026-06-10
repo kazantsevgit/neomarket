@@ -29,6 +29,7 @@ def make_product(
     price_kopecks: int = 12_999_000,
     characteristics: list | None = None,
     created_at: datetime | None = None,
+    with_stock: bool = True,
 ) -> MagicMock:
     p = MagicMock(spec=Product)
     p.id = product_id
@@ -37,9 +38,12 @@ def make_product(
     p.status = ProductStatus.MODERATED
     p.deleted = False
     p.description = "Flagship"
-    p.images = [{"url": "https://cdn.neomarket.ru/images/iphone15.jpg", "ordering": 0}]
+    p.images = [{"id": str(uuid.uuid4()), "url": "https://cdn.neomarket.ru/images/iphone15.jpg", "ordering": 0}]
     p.characteristics = characteristics or [{"name": "Бренд", "value": "Apple"}]
-    p.skus = []
+    sku = MagicMock()
+    sku.stock_quantity = 10 if with_stock else 0
+    sku.reserved_quantity = 0
+    p.skus = [sku]
     p.created_at = created_at or _NOW
     return p
 
@@ -85,10 +89,10 @@ async def test_catalog_returns_filtered_sorted_products(mock_db):
     assert result.limit == 20
     assert result.offset == 0
     assert len(result.items) == 2
-    assert result.items[0].price == 8_999_000
-    assert result.items[0].title == "A"
-    assert result.items[0].in_stock is True
-    assert result.items[1].price == 12_999_000
+    assert result.items[0].min_price == 8_999_000
+    assert result.items[0].name == "A"
+    assert result.items[0].has_stock is True
+    assert result.items[1].min_price == 12_999_000
     assert mock_db.execute.await_count == 2
 
 
@@ -144,7 +148,7 @@ async def test_b2b_unavailable_returns_502():
             client_cls.return_value.__aexit__ = AsyncMock(return_value=False)
             resp = await client.get(
                 "/api/v1/catalog/products",
-                params={"category_id": str(CATEGORY_ID), "sort": "rating"},
+                params={"filter[category_id]": str(CATEGORY_ID), "sort": "popularity"},
             )
 
     assert resp.status_code == 502
@@ -167,11 +171,11 @@ async def test_b2c_proxy_returns_b2b_payload():
         ) as mocked:
             resp = await client.get(
                 "/api/v1/catalog/products",
-                params={"category_id": str(CATEGORY_ID), "sort": "rating"},
+                params={"filter[category_id]": str(CATEGORY_ID), "sort": "popularity"},
             )
 
     assert resp.status_code == 200
     mocked.assert_awaited_once()
     call_kwargs = mocked.await_args.kwargs
     assert call_kwargs["category_id"] == CATEGORY_ID
-    assert call_kwargs["sort"] == "rating"
+    assert call_kwargs["sort"] == "popularity"
