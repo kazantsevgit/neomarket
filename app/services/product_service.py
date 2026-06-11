@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.models.category import Category
 from app.models.product import Product, ProductStatus, SKU
 from app.schemas.product import Characteristic, ProductCreate, ProductImageCreate, ProductUpdate, SKUUpdate
-from app.services.moderation_client import emit_product_edited
+from app.services.moderation_client import emit_product_deleted, emit_product_deleted_to_b2c, emit_product_edited
 
 
 
@@ -154,7 +154,15 @@ async def delete_product(
     product_id: uuid.UUID,
     seller_id: uuid.UUID,
 ) -> None:
-    """Мягкое удаление товара с проверкой HARD_BLOCKED."""
+    """
+    Мягкое удаление товара (soft delete).
+    - HARD_BLOCKED → 403
+    - Уже удалён → 400
+    - Чужой товар → 404 (IDOR-защита)
+    После коммита: два fire-and-forget события:
+      1. DELETED → Moderation (снять с очереди)
+      2. PRODUCT_DELETED → B2C (пометить корзины по sku_ids)
+    """
     product = await get_product(db, product_id, seller_id=seller_id)
 
     if product.status == ProductStatus.HARD_BLOCKED:
@@ -163,10 +171,27 @@ async def delete_product(
             detail="Cannot delete HARD_BLOCKED product",
         )
 
+    if product.deleted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Product is already deleted",
+        )
+
+    sku_ids = [sku.id for sku in product.skus]
+
     product.deleted = True
     product.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
+
+    emit_product_deleted(
+        product_id=product.id,
+        seller_id=product.seller_id,
+    )
+    emit_product_deleted_to_b2c(
+        product_id=product.id,
+        sku_ids=sku_ids,
+    )
 
 
 async def list_seller_products(
