@@ -38,15 +38,18 @@ from app.dependencies.db import get_db
 from app.models.blocking_reason import BlockingReason
 from app.models.moderation_event import ModerationEventIdempotency
 from app.models.product import Product, ProductStatus
+from app.models.ticket import Ticket, TicketKind, TicketStatus
 
 # ─── Константы ───────────────────────────────────────────────────────────────
 
 _NOW            = datetime.now(timezone.utc)
 PRODUCT_ID      = uuid.uuid4()
+TICKET_ID       = uuid.uuid4()
 IDEM_KEY        = uuid.uuid4()
 BLOCKING_REASON = uuid.uuid4()
 MODERATOR_ID    = uuid.uuid4()
 HARD_REASON_ID  = uuid.uuid4()
+SELLER_ID       = uuid.uuid4()
 
 SERVICE_KEY_HEADER = {"X-Service-Key": "test-moderation-key"}
 
@@ -80,6 +83,28 @@ def make_idempotency_record(event_type: str) -> MagicMock:
     r.product_id      = PRODUCT_ID
     r.event_type      = event_type
     return r
+
+
+def make_ticket(
+    status: TicketStatus = TicketStatus.IN_REVIEW,
+    product_id: uuid.UUID = PRODUCT_ID,
+) -> MagicMock:
+    t = MagicMock(spec=Ticket)
+    t.id                = TICKET_ID
+    t.product_id        = product_id
+    t.seller_id         = SELLER_ID
+    t.category_id       = None
+    t.kind              = TicketKind.CREATE
+    t.status            = status
+    t.assigned_moderator_id = None
+    t.moderator_comment = None
+    t.blocking_reason_id = None
+    t.edit_pending      = False
+    t.decision_at       = None
+    t.created_at        = _NOW
+    t.updated_at        = _NOW
+    t.field_reports     = []
+    return t
 
 
 # ─── Фикстуры ────────────────────────────────────────────────────────────────
@@ -414,26 +439,28 @@ def make_reason(
     return r
 
 
-# ─── Decline tests (US-MOD-05) ────────────────────────────────────────────────
+# ─── Block tests (US-MOD-04/05 via tickets) ────────────────────────────────────
 
+_BLOCK_URL = f"/api/v1/tickets/{TICKET_ID}/block"
 
-_DECLINE_URL = f"/api/v1/products/{PRODUCT_ID}/decline"
-
-DECLINE_BODY = {
-    "blocking_reason_id": str(HARD_REASON_ID),
-    "moderator_comment": "Товар является контрафактом, подтверждено проверкой",
+BLOCK_BODY = {
+    "blocking_reason_ids": [str(HARD_REASON_ID)],
+    "comment": "Товар является контрафактом, подтверждено проверкой",
     "field_reports": [],
 }
 
 
-def _db_for_decline(
-    product: MagicMock,
+def _db_for_block(
+    ticket: MagicMock,
+    product: MagicMock | None = None,
     reason: MagicMock | None = None,
 ) -> AsyncMock:
-    """Настраивает fake_db для decline: get(Product) и get(BlockingReason)."""
+    """Настраивает fake_db для block: get(Ticket), get(Product), get(BlockingReason)."""
     db = AsyncMock()
 
     def get_side_effect(model_class, pk):
+        if model_class == Ticket:
+            return ticket
         if model_class == Product:
             return product
         if model_class == BlockingReason:
@@ -444,54 +471,93 @@ def _db_for_decline(
     return db
 
 
-async def test_decline_hard_block_returns_200_and_sets_HARD_BLOCKED(override_db):
+async def test_block_hard_sets_HARD_BLOCKED_and_returns_TicketResponse(override_db):
     """
-    happy: decline_hard_block_returns_200_and_sets_HARD_BLOCKED
-    decline с hard_block причиной → 200, статус HARD_BLOCKED.
+    happy: block с hard_block причиной → 200, статус HARD_BLOCKED, ответ TicketResponse.
     """
+    ticket  = make_ticket(status=TicketStatus.IN_REVIEW)
     product = make_product(status=ProductStatus.ON_MODERATION)
     reason  = make_reason(hard_block=True)
 
-    db = _db_for_decline(product, reason=reason)
+    db = _db_for_block(ticket, product=product, reason=reason)
     app.dependency_overrides[get_db] = lambda: db
 
     with patch("app.services.moderation_service.emit_product_blocked_to_b2c") as mock_emit:
         async with await make_client() as client:
             resp = await client.post(
-                _DECLINE_URL,
-                json=DECLINE_BODY,
+                _BLOCK_URL,
+                json=BLOCK_BODY,
                 headers=SERVICE_KEY_HEADER,
             )
 
     assert resp.status_code == 200
     data = resp.json()
+    assert data["id"] == str(TICKET_ID)
     assert data["product_id"] == str(PRODUCT_ID)
+    assert data["seller_id"] == str(SELLER_ID)
     assert data["status"] == "HARD_BLOCKED"
+    assert data["kind"] == "CREATE"
+
     assert product.status == ProductStatus.HARD_BLOCKED
     assert product.blocking_reason_id == HARD_REASON_ID
     assert product.moderator_comment == "Товар является контрафактом, подтверждено проверкой"
+    assert ticket.status == TicketStatus.HARD_BLOCKED
+
     mock_emit.assert_called_once_with(PRODUCT_ID)
     db.commit.assert_awaited_once()
 
 
-async def test_decline_missing_service_key_returns_401(override_db):
-    """unhappy: decline_missing_service_key_returns_401 — без X-Service-Key → 401."""
+async def test_block_soft_sets_BLOCKED(override_db):
+    """
+    happy: block с soft-block причиной → 200, статус BLOCKED.
+    """
+    ticket  = make_ticket(status=TicketStatus.IN_REVIEW)
+    product = make_product(status=ProductStatus.ON_MODERATION)
+    reason  = make_reason(hard_block=False)
+
+    db = _db_for_block(ticket, product=product, reason=reason)
+    app.dependency_overrides[get_db] = lambda: db
+
+    body = {
+        "blocking_reason_ids": [str(HARD_REASON_ID)],
+        "comment": "Мягкая блокировка",
+        "field_reports": [],
+    }
+
+    with patch("app.services.moderation_service.emit_product_blocked_to_b2c") as mock_emit:
+        async with await make_client() as client:
+            resp = await client.post(
+                _BLOCK_URL,
+                json=body,
+                headers=SERVICE_KEY_HEADER,
+            )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "BLOCKED"
+    assert product.status == ProductStatus.BLOCKED
+    assert ticket.status == TicketStatus.BLOCKED
+    mock_emit.assert_called_once_with(PRODUCT_ID)
+
+
+async def test_block_missing_service_key_returns_401(override_db):
+    """unhappy: без X-Service-Key → 401."""
     async with await make_client() as client:
         resp = await client.post(
-            _DECLINE_URL,
-            json=DECLINE_BODY,
+            _BLOCK_URL,
+            json=BLOCK_BODY,
         )
 
     assert resp.status_code == 401
     assert resp.json()["code"] == "UNAUTHORIZED"
 
 
-async def test_decline_wrong_service_key_returns_401(override_db):
-    """unhappy: decline_wrong_service_key_returns_401 — неверный ключ → 401."""
+async def test_block_wrong_service_key_returns_401(override_db):
+    """unhappy: неверный ключ → 401."""
     async with await make_client() as client:
         resp = await client.post(
-            _DECLINE_URL,
-            json=DECLINE_BODY,
+            _BLOCK_URL,
+            json=BLOCK_BODY,
             headers={"X-Service-Key": "wrong-key"},
         )
 
@@ -499,71 +565,76 @@ async def test_decline_wrong_service_key_returns_401(override_db):
     assert resp.json()["code"] == "UNAUTHORIZED"
 
 
-async def test_decline_product_not_found_returns_404(override_db):
-    """unhappy: decline_product_not_found_returns_404 — товар не найден."""
+async def test_block_ticket_not_found_returns_404(override_db):
+    """unhappy: тикет не найден → 404."""
     db = AsyncMock()
-    db.get.side_effect = lambda model, pk: None  # ничего не найдено
+    db.get.side_effect = lambda model, pk: None
     app.dependency_overrides[get_db] = lambda: db
 
     async with await make_client() as client:
         resp = await client.post(
-            _DECLINE_URL,
-            json=DECLINE_BODY,
+            _BLOCK_URL,
+            json=BLOCK_BODY,
             headers=SERVICE_KEY_HEADER,
         )
 
     assert resp.status_code == 404
 
 
-async def test_decline_reason_not_found_returns_404(override_db):
-    """unhappy: decline_reason_not_found_returns_404 — причина не найдена."""
-    product = make_product(status=ProductStatus.ON_MODERATION)
+async def test_block_product_not_found_returns_404(override_db):
+    """unhappy: товар по тикету не найден → 404."""
+    ticket = make_ticket(status=TicketStatus.IN_REVIEW)
 
     db = AsyncMock()
-    db.get.side_effect = lambda model, pk: product if model == Product else None
+    db.get.side_effect = lambda model, pk: ticket if model == Ticket else None
     app.dependency_overrides[get_db] = lambda: db
 
     async with await make_client() as client:
         resp = await client.post(
-            _DECLINE_URL,
-            json=DECLINE_BODY,
+            _BLOCK_URL,
+            json=BLOCK_BODY,
             headers=SERVICE_KEY_HEADER,
         )
 
     assert resp.status_code == 404
 
 
-async def test_decline_reason_not_hard_returns_400(override_db):
-    """unhappy: decline_reason_not_hard_returns_400 — причина не hard_block."""
+async def test_block_reason_not_found_returns_404(override_db):
+    """unhappy: причина блокировки не найдена → 404."""
+    ticket  = make_ticket(status=TicketStatus.IN_REVIEW)
     product = make_product(status=ProductStatus.ON_MODERATION)
-    reason  = make_reason(hard_block=False)
 
-    db = _db_for_decline(product, reason=reason)
+    db = AsyncMock()
+    db.get.side_effect = lambda model, pk: (
+        ticket if model == Ticket else
+        product if model == Product else
+        None
+    )
     app.dependency_overrides[get_db] = lambda: db
 
     async with await make_client() as client:
         resp = await client.post(
-            _DECLINE_URL,
-            json=DECLINE_BODY,
+            _BLOCK_URL,
+            json=BLOCK_BODY,
             headers=SERVICE_KEY_HEADER,
         )
 
-    assert resp.status_code == 400
-    assert resp.json()["code"] == "NOT_HARD_BLOCK_REASON"
+    assert resp.status_code == 404
 
 
-async def test_decline_already_hard_blocked_returns_409(override_db):
-    """unhappy: decline_already_hard_blocked_returns_409 — уже HARD_BLOCKED."""
+async def test_block_already_hard_blocked_returns_409(override_db):
+    """unhappy: тикет уже HARD_BLOCKED → 409."""
+    ticket  = make_ticket(status=TicketStatus.HARD_BLOCKED)
     product = make_product(status=ProductStatus.HARD_BLOCKED)
     reason  = make_reason(hard_block=True)
 
-    db = _db_for_decline(product, reason=reason)
+    db = _db_for_block(ticket, product=product, reason=reason)
     app.dependency_overrides[get_db] = lambda: db
 
     async with await make_client() as client:
         resp = await client.post(
-            _DECLINE_URL,
-            json=DECLINE_BODY,
+            _BLOCK_URL,
+            json=BLOCK_BODY,
             headers=SERVICE_KEY_HEADER,
         )
 
@@ -571,39 +642,41 @@ async def test_decline_already_hard_blocked_returns_409(override_db):
     assert resp.json()["code"] == "ALREADY_HARD_BLOCKED"
 
 
-async def test_decline_wrong_status_returns_409(override_db):
-    """unhappy: decline на товаре не в ON_MODERATION → 409 WRONG_STATUS."""
-    product = make_product(status=ProductStatus.MODERATED)
+async def test_block_wrong_status_returns_409(override_db):
+    """unhappy: тикет не в IN_REVIEW → 409 WRONG_STATUS."""
+    ticket  = make_ticket(status=TicketStatus.PENDING)
+    product = make_product(status=ProductStatus.ON_MODERATION)
     reason  = make_reason(hard_block=True)
 
-    db = _db_for_decline(product, reason=reason)
+    db = _db_for_block(ticket, product=product, reason=reason)
     app.dependency_overrides[get_db] = lambda: db
 
     async with await make_client() as client:
         resp = await client.post(
-            _DECLINE_URL,
-            json=DECLINE_BODY,
+            _BLOCK_URL,
+            json=BLOCK_BODY,
             headers=SERVICE_KEY_HEADER,
         )
 
     assert resp.status_code == 409
     assert resp.json()["code"] == "WRONG_STATUS"
-    assert "ON_MODERATION" in resp.json()["message"]
+    assert "IN_REVIEW" in resp.json()["message"]
 
 
-async def test_decline_with_field_reports(override_db):
+async def test_block_with_field_reports(override_db):
     """
-    happy: decline с field_reports сохраняет их на товаре.
+    happy: block с field_reports сохраняет их на товаре и тикете.
     """
+    ticket  = make_ticket(status=TicketStatus.IN_REVIEW)
     product = make_product(status=ProductStatus.ON_MODERATION)
     reason  = make_reason(hard_block=True)
 
-    db = _db_for_decline(product, reason=reason)
+    db = _db_for_block(ticket, product=product, reason=reason)
     app.dependency_overrides[get_db] = lambda: db
 
     body = {
-        "blocking_reason_id": str(HARD_REASON_ID),
-        "moderator_comment": "Проблемы с описанием",
+        "blocking_reason_ids": [str(HARD_REASON_ID)],
+        "comment": "Проблемы с описанием",
         "field_reports": [
             {"field_name": "title", "comment": "Не соответствует товару"},
             {"field_name": "description", "comment": "Слишком короткое"},
@@ -613,7 +686,7 @@ async def test_decline_with_field_reports(override_db):
     with patch("app.services.moderation_service.emit_product_blocked_to_b2c"):
         async with await make_client() as client:
             resp = await client.post(
-                _DECLINE_URL,
+                _BLOCK_URL,
                 json=body,
                 headers=SERVICE_KEY_HEADER,
             )
@@ -624,21 +697,22 @@ async def test_decline_with_field_reports(override_db):
     assert product.field_reports[1]["field_name"] == "description"
 
 
-async def test_decline_triggers_product_blocked_to_b2c(override_db):
+async def test_block_triggers_product_blocked_to_b2c(override_db):
     """
-    cascade: decline_triggers_product_blocked_to_b2c — проверка fire-and-forget вызова.
+    cascade: block_triggers_product_blocked_to_b2c — проверка fire-and-forget вызова.
     """
+    ticket  = make_ticket(status=TicketStatus.IN_REVIEW)
     product = make_product(status=ProductStatus.ON_MODERATION)
     reason  = make_reason(hard_block=True)
 
-    db = _db_for_decline(product, reason=reason)
+    db = _db_for_block(ticket, product=product, reason=reason)
     app.dependency_overrides[get_db] = lambda: db
 
     with patch("app.services.moderation_service.emit_product_blocked_to_b2c") as mock_emit:
         async with await make_client() as client:
             resp = await client.post(
-                _DECLINE_URL,
-                json=DECLINE_BODY,
+                _BLOCK_URL,
+                json=BLOCK_BODY,
                 headers=SERVICE_KEY_HEADER,
             )
 
