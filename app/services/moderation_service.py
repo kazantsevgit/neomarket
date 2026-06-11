@@ -32,12 +32,17 @@ from app.config import settings
 from app.models.blocking_reason import BlockingReason
 from app.models.moderation_event import ModerationEventIdempotency
 from app.models.product import Product, ProductStatus
+from app.models.ticket import Ticket, TicketStatus
+from app.models.ticket_field_report import TicketFieldReport
 from app.schemas.moderation import (
+    BlockDecisionRequest,
+    BlockFieldReport,
     DeclineRequest,
     DeclineResponse,
     FieldReport,
     ModerationEventRequest,
     ModerationEventType,
+    TicketResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -241,4 +246,108 @@ async def hard_block_product(
     return DeclineResponse(
         product_id=product_id,
         status=ProductStatus.HARD_BLOCKED.value,
+    )
+
+
+async def block_ticket(
+    db: AsyncSession,
+    ticket_id: uuid.UUID,
+    request: BlockDecisionRequest,
+) -> TicketResponse:
+    """
+    Блокировка товара по тикету (мягкая или жёсткая).
+
+    Тип блокировки определяется по hard_block у выбранной BlockingReason.
+    """
+    ticket: Ticket | None = await db.get(Ticket, ticket_id)
+    if ticket is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "TICKET_NOT_FOUND", "message": "Ticket not found"},
+        )
+
+    if ticket.status == TicketStatus.HARD_BLOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "ALREADY_HARD_BLOCKED", "message": "Ticket is already HARD_BLOCKED"},
+        )
+
+    if ticket.status != TicketStatus.IN_REVIEW:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "WRONG_STATUS",
+                "message": f"Ticket must be IN_REVIEW, got {ticket.status.value}",
+            },
+        )
+
+    product: Product | None = await db.get(Product, ticket.product_id)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "PRODUCT_NOT_FOUND", "message": "Product not found"},
+        )
+
+    reason_id = request.blocking_reason_ids[0]
+    reason: BlockingReason | None = await db.get(BlockingReason, reason_id)
+    if reason is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "REASON_NOT_FOUND", "message": "Blocking reason not found"},
+        )
+
+    is_hard = reason.hard_block
+
+    new_status_p = ProductStatus.HARD_BLOCKED if is_hard else ProductStatus.BLOCKED
+    new_status_t = TicketStatus.HARD_BLOCKED if is_hard else TicketStatus.BLOCKED
+
+    product.status = new_status_p
+    product.blocking_reason_id = reason_id
+    product.blocking_reason = {
+        "id": str(reason.id),
+        "title": reason.title,
+        "comment": request.comment or "",
+    }
+    product.moderator_comment = request.comment
+    product.field_reports = [
+        {"field_name": fr.field_name, "sku_id": None, "comment": fr.comment}
+        for fr in (request.field_reports or [])
+    ]
+
+    now = datetime.now(timezone.utc)
+    ticket.status = new_status_t
+    ticket.blocking_reason_id = reason_id
+    ticket.moderator_comment = request.comment
+    ticket.decision_at = now
+    ticket.updated_at = now
+
+    ticket.field_reports.clear()
+    for fr in (request.field_reports or []):
+        tfr = TicketFieldReport(
+            ticket_id=ticket.id,
+            field_name=fr.field_name,
+            comment=fr.comment,
+        )
+        ticket.field_reports.append(tfr)
+
+    emit_product_blocked_to_b2c(product.id)
+
+    await db.commit()
+
+    logger.info(
+        "block_ticket ticket_id=%s product_id=%s reason=%s hard=%s",
+        ticket_id, product.id, reason.code, is_hard,
+    )
+
+    return TicketResponse(
+        id=ticket.id,
+        product_id=ticket.product_id,
+        seller_id=ticket.seller_id,
+        category_id=ticket.category_id,
+        kind=ticket.kind.value,
+        status=ticket.status.value,
+        assigned_moderator_id=ticket.assigned_moderator_id,
+        decision_at=ticket.decision_at,
+        created_at=ticket.created_at,
+        updated_at=ticket.updated_at,
     )
