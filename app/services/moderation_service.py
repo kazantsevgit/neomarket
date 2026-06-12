@@ -48,28 +48,29 @@ from app.schemas.moderation import (
 logger = logging.getLogger(__name__)
 
 
-async def _send_product_blocked(product_id: uuid.UUID) -> None:
-    """Реальная отправка PRODUCT_BLOCKED в B2C (fire-and-forget)."""
+async def _send_product_blocked(product_id: uuid.UUID, hard_block: bool = False) -> None:
+    """Реальная отправка BLOCKED в B2B (fire-and-forget). B2B каскадирует в B2C."""
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             await client.post(
-                f"{settings.B2C_URL}/api/v1/b2b/events",
+                f"{settings.B2B_URL}/api/v1/moderation/events",
                 json={
                     "idempotency_key": str(uuid.uuid4()),
                     "occurred_at": datetime.now(timezone.utc).isoformat(),
-                    "event_type": "PRODUCT_BLOCKED",
+                    "event_type": "BLOCKED",
+                    "hard_block": hard_block,
                     "payload": {"product_id": str(product_id)},
                 },
-                headers={"X-Service-Key": settings.B2C_SERVICE_KEY},
+                headers={"X-Service-Key": settings.MODERATION_SERVICE_KEY},
             )
-        logger.info("PRODUCT_BLOCKED sent product_id=%s", product_id)
+        logger.info("BLOCKED sent to B2B product_id=%s hard_block=%s", product_id, hard_block)
     except Exception as exc:
-        logger.error("failed to send PRODUCT_BLOCKED product_id=%s: %s", product_id, exc)
+        logger.error("failed to send BLOCKED to B2B product_id=%s: %s", product_id, exc)
 
 
-def emit_product_blocked_to_b2c(product_id: uuid.UUID) -> None:
-    """Fire-and-forget каскадное событие в B2C."""
-    asyncio.create_task(_send_product_blocked(product_id))
+def emit_product_blocked_to_b2b(product_id: uuid.UUID, hard_block: bool = False) -> None:
+    """Fire-and-forget каскадное событие в B2B."""
+    asyncio.create_task(_send_product_blocked(product_id, hard_block=hard_block))
 
 
 async def apply_moderation_decision(
@@ -83,8 +84,8 @@ async def apply_moderation_decision(
     2. Загружаем товар из БД.
     3. В зависимости от event_type и hard_block:
        - MODERATED: status=MODERATED, очищаем blocking_reason/field_reports.
-       - BLOCKED + hard_block=false: status=BLOCKED, сохраняем field_reports, каскад в B2C.
-       - BLOCKED + hard_block=true: status=HARD_BLOCKED, каскад в B2C.
+       - BLOCKED + hard_block=false: status=BLOCKED, сохраняем field_reports, каскад в B2B.
+       - BLOCKED + hard_block=true: status=HARD_BLOCKED, каскад в B2B.
     4. Сохраняем idempotency-запись.
     """
     # ── 1. Idempotency check ─────────────────────────────────────────────────
@@ -150,8 +151,8 @@ async def apply_moderation_decision(
         else:
             product.field_reports = []
 
-        # Каскадное событие в B2C
-        emit_product_blocked_to_b2c(product.id)
+        # Каскадное событие в B2B (B2B каскадирует в B2C)
+        emit_product_blocked_to_b2b(product.id, hard_block=payload.hard_block)
 
     # ── 5. Сохраняем idempotency-запись ──────────────────────────────────────
     db.add(
@@ -288,6 +289,14 @@ async def block_ticket(
             detail={"code": "PRODUCT_NOT_FOUND", "message": "Product not found"},
         )
 
+    if not request.blocking_reason_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "MISSING_BLOCKING_REASONS",
+                "message": "At least one blocking_reason_id is required",
+            },
+        )
     reason_id = request.blocking_reason_ids[0]
     reason: BlockingReason | None = await db.get(BlockingReason, reason_id)
     if reason is None:
@@ -310,7 +319,7 @@ async def block_ticket(
     }
     product.moderator_comment = request.comment
     product.field_reports = [
-        {"field_name": fr.field_name, "sku_id": None, "comment": fr.comment}
+        {"field_path": fr.field_path, "sku_id": None, "message": fr.message}
         for fr in (request.field_reports or [])
     ]
 
@@ -325,12 +334,12 @@ async def block_ticket(
     for fr in (request.field_reports or []):
         tfr = TicketFieldReport(
             ticket_id=ticket.id,
-            field_name=fr.field_name,
-            comment=fr.comment,
+            field_name=fr.field_path,
+            comment=fr.message,
         )
         ticket.field_reports.append(tfr)
 
-    emit_product_blocked_to_b2c(product.id)
+    emit_product_blocked_to_b2b(product.id, hard_block=is_hard)
 
     await db.commit()
 

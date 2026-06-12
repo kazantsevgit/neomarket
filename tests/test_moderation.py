@@ -208,7 +208,7 @@ async def test_blocked_soft_saves_field_reports(override_db):
         ],
     }
 
-    with patch("app.services.moderation_service.emit_product_blocked_to_b2c") as mock_emit:
+    with patch("app.services.moderation_service.emit_product_blocked_to_b2b") as mock_emit:
         async with await make_client() as client:
             resp = await client.post(
                 "/api/v1/moderation/events",
@@ -223,15 +223,15 @@ async def test_blocked_soft_saves_field_reports(override_db):
     assert product.field_reports[0]["field_name"] == "title"
     assert product.field_reports[1]["field_name"] == "description"
 
-    # Каскадное событие в B2C
-    mock_emit.assert_called_once_with(PRODUCT_ID)
+    # Каскадное событие в B2B
+    mock_emit.assert_called_once_with(PRODUCT_ID, hard_block=False)
     db.commit.assert_awaited_once()
 
 
 async def test_blocked_hard_sets_terminal_status(override_db):
     """
     happy: blocked_hard_sets_terminal_status
-    BLOCKED + hard_block=true → HARD_BLOCKED, каскад в B2C.
+    BLOCKED + hard_block=true → HARD_BLOCKED, каскад в B2B.
     """
     product = make_product(status=ProductStatus.ON_MODERATION)
 
@@ -246,7 +246,7 @@ async def test_blocked_hard_sets_terminal_status(override_db):
         "moderator_comment": "Counterfeit detected",
     }
 
-    with patch("app.services.moderation_service.emit_product_blocked_to_b2c") as mock_emit:
+    with patch("app.services.moderation_service.emit_product_blocked_to_b2b") as mock_emit:
         async with await make_client() as client:
             resp = await client.post(
                 "/api/v1/moderation/events",
@@ -258,7 +258,7 @@ async def test_blocked_hard_sets_terminal_status(override_db):
     assert product.status == ProductStatus.HARD_BLOCKED
     assert product.blocking_reason_id == BLOCKING_REASON
 
-    mock_emit.assert_called_once_with(PRODUCT_ID)
+    mock_emit.assert_called_once_with(PRODUCT_ID, hard_block=True)
     db.commit.assert_awaited_once()
 
 
@@ -482,7 +482,7 @@ async def test_block_hard_sets_HARD_BLOCKED_and_returns_TicketResponse(override_
     db = _db_for_block(ticket, product=product, reason=reason)
     app.dependency_overrides[get_db] = lambda: db
 
-    with patch("app.services.moderation_service.emit_product_blocked_to_b2c") as mock_emit:
+    with patch("app.services.moderation_service.emit_product_blocked_to_b2b") as mock_emit:
         async with await make_client() as client:
             resp = await client.post(
                 _BLOCK_URL,
@@ -503,7 +503,7 @@ async def test_block_hard_sets_HARD_BLOCKED_and_returns_TicketResponse(override_
     assert product.moderator_comment == "Товар является контрафактом, подтверждено проверкой"
     assert ticket.status == TicketStatus.HARD_BLOCKED
 
-    mock_emit.assert_called_once_with(PRODUCT_ID)
+    mock_emit.assert_called_once_with(PRODUCT_ID, hard_block=True)
     db.commit.assert_awaited_once()
 
 
@@ -524,7 +524,7 @@ async def test_block_soft_sets_BLOCKED(override_db):
         "field_reports": [],
     }
 
-    with patch("app.services.moderation_service.emit_product_blocked_to_b2c") as mock_emit:
+    with patch("app.services.moderation_service.emit_product_blocked_to_b2b") as mock_emit:
         async with await make_client() as client:
             resp = await client.post(
                 _BLOCK_URL,
@@ -537,7 +537,7 @@ async def test_block_soft_sets_BLOCKED(override_db):
     assert data["status"] == "BLOCKED"
     assert product.status == ProductStatus.BLOCKED
     assert ticket.status == TicketStatus.BLOCKED
-    mock_emit.assert_called_once_with(PRODUCT_ID)
+    mock_emit.assert_called_once_with(PRODUCT_ID, hard_block=False)
 
 
 async def test_block_missing_service_key_returns_401(override_db):
@@ -678,12 +678,12 @@ async def test_block_with_field_reports(override_db):
         "blocking_reason_ids": [str(HARD_REASON_ID)],
         "comment": "Проблемы с описанием",
         "field_reports": [
-            {"field_name": "title", "comment": "Не соответствует товару"},
-            {"field_name": "description", "comment": "Слишком короткое"},
+            {"field_path": "title", "message": "Не соответствует товару"},
+            {"field_path": "description", "message": "Слишком короткое"},
         ],
     }
 
-    with patch("app.services.moderation_service.emit_product_blocked_to_b2c"):
+    with patch("app.services.moderation_service.emit_product_blocked_to_b2b"):
         async with await make_client() as client:
             resp = await client.post(
                 _BLOCK_URL,
@@ -693,8 +693,8 @@ async def test_block_with_field_reports(override_db):
 
     assert resp.status_code == 200
     assert len(product.field_reports) == 2
-    assert product.field_reports[0]["field_name"] == "title"
-    assert product.field_reports[1]["field_name"] == "description"
+    assert product.field_reports[0]["field_path"] == "title"
+    assert product.field_reports[1]["field_path"] == "description"
 
 
 async def test_block_triggers_product_blocked_to_b2c(override_db):
@@ -708,7 +708,7 @@ async def test_block_triggers_product_blocked_to_b2c(override_db):
     db = _db_for_block(ticket, product=product, reason=reason)
     app.dependency_overrides[get_db] = lambda: db
 
-    with patch("app.services.moderation_service.emit_product_blocked_to_b2c") as mock_emit:
+    with patch("app.services.moderation_service.emit_product_blocked_to_b2b") as mock_emit:
         async with await make_client() as client:
             resp = await client.post(
                 _BLOCK_URL,
@@ -717,4 +717,4 @@ async def test_block_triggers_product_blocked_to_b2c(override_db):
             )
 
     assert resp.status_code == 200
-    mock_emit.assert_called_once_with(PRODUCT_ID)
+    mock_emit.assert_called_once_with(PRODUCT_ID, hard_block=True)
