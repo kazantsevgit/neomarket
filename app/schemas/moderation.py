@@ -45,8 +45,8 @@ class TicketResponse(BaseModel):
 
 
 class BlockFieldReport(BaseModel):
-    field_name: str
-    comment: str
+    field_path: str
+    message: str
 
 
 class BlockDecisionRequest(BaseModel):
