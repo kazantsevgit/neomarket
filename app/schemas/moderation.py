@@ -76,3 +76,35 @@ class ModerationEventRequest(BaseModel):
     hard_block: bool = Field(default=False, description="При true → HARD_BLOCKED")
     field_reports: Optional[List[FieldReport]] = None
     occurred_at: datetime
+
+
+class GetNextRequest(BaseModel):
+    queue_id: int | None = Field(
+        None, ge=1, le=4,
+        description="Номер очереди (1-4). Если null — автоприоритизация 1→4",
+    )
+
+
+class BlockingHistoryBlockingReason(BaseModel):
+    id: uuid.UUID
+    title: str
+
+
+class BlockingHistory(BaseModel):
+    blocking_reason: BlockingHistoryBlockingReason
+    moderator_comment: str | None = None
+    field_reports: list[dict] | None = None
+    date_blocked: datetime | None = None
+
+
+class GetNextResponse(BaseModel):
+    product_moderation_id: uuid.UUID
+    product_id: uuid.UUID
+    seller_id: uuid.UUID
+    status: str
+    queue_priority: int
+    json_before: dict | None = None
+    json_after: dict | None = None
+    blocking_history: BlockingHistory | None = None
+    date_created: datetime
+    date_updated: datetime

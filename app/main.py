@@ -20,6 +20,7 @@ from app.routers.auth import router as auth_router
 from app.routers.b2b_events import router as b2b_events_router
 from app.routers.invoices import router as invoices_router
 from app.routers.events import router as events_router
+from app.routers.get_next import router as get_next_router
 
 app = FastAPI(title="NeoMarket B2B API", version="1.0.0")
 
@@ -38,9 +39,7 @@ app.include_router(auth_router)
 app.include_router(invoices_router)
 app.include_router(events_router)
 app.include_router(b2b_events_router)
-app.include_router(b2b_events_router)
-app.include_router(invoices_router)
-app.include_router(events_router)
+app.include_router(get_next_router)
 
 
 @app.exception_handler(HTTPException)
