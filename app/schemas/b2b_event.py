@@ -5,14 +5,38 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
-class B2BEventType(str, Enum):
-    CREATED = "CREATED"
-    EDITED = "EDITED"
-    DELETED = "DELETED"
+class IncomingB2BEventType(str, Enum):
+    PRODUCT_CREATED = "PRODUCT_CREATED"
+    PRODUCT_EDITED = "PRODUCT_EDITED"
+    PRODUCT_DELETED = "PRODUCT_DELETED"
 
 
-class B2BProductEventRequest(BaseModel):
-    product_id: uuid.UUID = Field(..., description="ID товара в B2B")
-    seller_id: uuid.UUID = Field(..., description="ID продавца")
-    event: B2BEventType = Field(..., description="CREATED, EDITED, DELETED")
-    date: datetime = Field(..., description="Время события в B2B (ISO 8601)")
+class EventProductCreated(BaseModel):
+    model_config = {"extra": "forbid"}
+    product_id: uuid.UUID
+    seller_id: uuid.UUID
+    category_id: uuid.UUID | None = None
+    queue_priority: int | None = Field(default=3, ge=1, le=4)
+    json_after: dict
+
+
+class EventProductEdited(BaseModel):
+    model_config = {"extra": "forbid"}
+    product_id: uuid.UUID
+    seller_id: uuid.UUID
+    category_id: uuid.UUID | None = None
+    queue_priority: int | None = Field(default=3, ge=1, le=4)
+    json_before: dict
+    json_after: dict
+
+
+class EventProductDeleted(BaseModel):
+    model_config = {"extra": "forbid"}
+    product_id: uuid.UUID
+
+
+class IncomingB2BEvent(BaseModel):
+    event_type: IncomingB2BEventType
+    idempotency_key: uuid.UUID
+    occurred_at: datetime
+    payload: EventProductCreated | EventProductEdited | EventProductDeleted

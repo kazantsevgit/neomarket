@@ -63,30 +63,33 @@ def emit_product_created(
     occurred_at: datetime | None = None,
 ) -> None:
     """
-    Отправляет событие CREATED в Moderation (fire-and-forget).
+    Отправляет событие PRODUCT_CREATED в Moderation (fire-and-forget).
 
-    Структура тела соответствует схеме IncomingB2BEvent (neomarket-moderation.yaml:478-497):
-      - event_type: "CREATED"
+    Структура тела соответствует схеме IncomingB2BEvent (neomarket-moderation.yaml):
+      - event_type: "PRODUCT_CREATED"
       - idempotency_key: str(product_id) — повторный вызов идемпотентен
-      - product_id, seller_id, category_id, title — атрибуты товара
-      - sku_id, price — первый SKU, инициировавший переход в ON_MODERATION
+      - payload: {product_id, seller_id, category_id, json_after}
 
     Примечание: product_id=None vs seller_id=None — оба случая объединены
     в 404, чтобы не раскрывать чужие product_id (IDOR-защита).
     """
     ts = occurred_at or datetime.now(timezone.utc)
-    payload = {
-        "event_type": "CREATED",
+    body = {
+        "event_type": "PRODUCT_CREATED",
         "idempotency_key": str(product_id),
         "occurred_at": ts.isoformat(),
-        "product_id": str(product_id),
-        "seller_id": str(seller_id),
-        "category_id": str(category_id),
-        "title": title,
-        "sku_id": str(sku_id),
-        "price": price,
+        "payload": {
+            "product_id": str(product_id),
+            "seller_id": str(seller_id),
+            "category_id": str(category_id),
+            "json_after": {
+                "title": title,
+                "sku_id": str(sku_id),
+                "price": price,
+            },
+        },
     }
-    asyncio.create_task(_send(payload))
+    asyncio.create_task(_send(body))
 
 
 def emit_product_deleted(
@@ -98,20 +101,19 @@ def emit_product_deleted(
     occurred_at: datetime | None = None,
 ) -> None:
     """
-    Отправляет событие DELETED в Moderation (fire-and-forget).
+    Отправляет событие PRODUCT_DELETED в Moderation (fire-and-forget).
     Вызывается при удалении последнего SKU товара в статусе ON_MODERATION.
     """
     ts = occurred_at or datetime.now(timezone.utc)
-    payload = {
-        "event_type": "DELETED",
+    body = {
+        "event_type": "PRODUCT_DELETED",
         "idempotency_key": str(product_id),
         "occurred_at": ts.isoformat(),
-        "product_id": str(product_id),
-        "seller_id": str(seller_id),
-        "category_id": str(category_id),
-        "title": title,
+        "payload": {
+            "product_id": str(product_id),
+        },
     }
-    asyncio.create_task(_send(payload))
+    asyncio.create_task(_send(body))
 
 
 def emit_product_edited(
@@ -125,26 +127,30 @@ def emit_product_edited(
     occurred_at: datetime | None = None,
 ) -> None:
     """
-    Отправляет событие EDITED в Moderation (fire-and-forget).
+    Отправляет событие PRODUCT_EDITED в Moderation (fire-and-forget).
     Вызывается при:
     - PUT /products/{id} (редактирование одобренного/заблокированного товара)
     - PUT /skus/{id} (редактирование SKU одобренного/заблокированного товара)
     - POST /skus (добавление SKU к MODERATED/BLOCKED товару)
     """
     ts = occurred_at or datetime.now(timezone.utc)
-    payload = {
-        "event_type": "EDITED",
+    body = {
+        "event_type": "PRODUCT_EDITED",
         "idempotency_key": str(uuid.uuid4()),  # каждое редактирование уникально
         "occurred_at": ts.isoformat(),
-        "product_id": str(product_id),
-        "seller_id": str(seller_id),
-        "category_id": str(category_id),
-        "title": title,
-        "sku_id": str(sku_id),
-        "price": price,
+        "payload": {
+            "product_id": str(product_id),
+            "seller_id": str(seller_id),
+            "category_id": str(category_id),
+            "json_before": {},
+            "json_after": {
+                "title": title,
+                "sku_id": str(sku_id),
+                "price": price,
+            },
+        },
     }
-    asyncio.create_task(_send(payload))
-
+    asyncio.create_task(_send(body))
 
 async def _send_b2c(payload: dict) -> None:
     """Отправка события в B2C (fire-and-forget)."""
