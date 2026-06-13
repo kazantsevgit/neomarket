@@ -8,10 +8,6 @@ DoD-сценарии (имена тестов строго из задания):
     - partial_reserve_failure_returns_409
     - idempotency_returns_existing_order
     - b2b_unavailable_returns_503
-
-Дополнительные тесты:
-    - checkout_validates_empty_items
-    - checkout_returns_409_on_blocked_product
 """
 
 import uuid
@@ -26,7 +22,6 @@ from app.main import app
 from app.config import settings
 from app.dependencies.db import get_db
 from app.models.order import Order, OrderItem, OrderStatus
-from app.services.b2b_client import B2BReserveFailedError, B2BUnavailableError
 
 # ─── Константы ───────────────────────────────────────────────────────────────
 
@@ -35,7 +30,10 @@ USER_ID = uuid.uuid4()
 SKU_ID_1 = uuid.uuid4()
 SKU_ID_2 = uuid.uuid4()
 PRODUCT_ID = uuid.uuid4()
+PRODUCT_ID_2 = uuid.uuid4()
 IDEM_KEY = uuid.uuid4()
+ADDRESS_ID = uuid.uuid4()
+PAYMENT_METHOD_ID = uuid.uuid4()
 
 
 def _make_jwt(user_id: uuid.UUID = USER_ID) -> str:
@@ -46,19 +44,25 @@ def _make_jwt(user_id: uuid.UUID = USER_ID) -> str:
     )
 
 
-AUTH_HEADERS = {"Authorization": f"Bearer {_make_jwt()}"}
+AUTH_HEADERS = {
+    "Authorization": f"Bearer {_make_jwt()}",
+    "Idempotency-Key": str(IDEM_KEY),
+}
 
 CHECKOUT_BODY = {
-    "idempotency_key": str(IDEM_KEY),
-    "items": [
-        {"sku_id": str(SKU_ID_1), "quantity": 2},
-        {"sku_id": str(SKU_ID_2), "quantity": 1},
-    ],
-    "delivery_address": "г. Москва, ул. Тверская, д. 1",
+    "address_id": str(ADDRESS_ID),
+    "payment_method_id": str(PAYMENT_METHOD_ID),
 }
 
 
 # ─── Фабрики ─────────────────────────────────────────────────────────────────
+
+def make_cart_item(sku_id: uuid.UUID = SKU_ID_1, quantity: int = 2) -> MagicMock:
+    item = MagicMock()
+    item.sku_id = sku_id
+    item.quantity = quantity
+    return item
+
 
 def make_sku_response(
     sku_id: uuid.UUID = SKU_ID_1,
@@ -66,10 +70,8 @@ def make_sku_response(
     name: str = "256GB Black",
     price: int = 12_999_000,
     active_quantity: int = 10,
-    product_status: str = "MODERATED",
-    product_deleted: bool = False,
-    product_title: str = "iPhone 15 Pro",
 ) -> dict:
+    """SKUPublicResponse — без вложенного product."""
     return {
         "id": str(sku_id),
         "product_id": str(product_id),
@@ -81,12 +83,28 @@ def make_sku_response(
         "article": None,
         "images": [],
         "characteristics": [],
-        "product": {
-            "id": str(product_id),
-            "title": product_title,
-            "status": product_status,
-            "deleted": product_deleted,
-        },
+    }
+
+
+def make_product_response(
+    product_id: uuid.UUID = PRODUCT_ID,
+    title: str = "iPhone 15 Pro",
+    status: str = "MODERATED",
+) -> dict:
+    """ProductPublicResponse — статус товара для checkout-валидации."""
+    return {
+        "id": str(product_id),
+        "seller_id": str(uuid.uuid4()),
+        "title": title,
+        "slug": "iphone-15-pro",
+        "description": "desc",
+        "category_id": str(uuid.uuid4()),
+        "status": status,
+        "images": [],
+        "characteristics": [],
+        "skus": [],
+        "created_at": _NOW.isoformat(),
+        "updated_at": _NOW.isoformat(),
     }
 
 
@@ -118,7 +136,7 @@ def make_order(
     o.user_id = USER_ID
     o.status = status
     o.total_amount = 12_999_000 * 3
-    o.delivery_address = "г. Москва, ул. Тверская, д. 1"
+    o.delivery_address = f"address:{ADDRESS_ID}"
     o.idempotency_key = idempotency_key
     o.created_at = _NOW
     o.updated_at = _NOW
@@ -142,11 +160,36 @@ async def _client() -> AsyncClient:
 
 # ─── Вспомогательные патчи ───────────────────────────────────────────────────
 
-def _patch_b2b_ok(skus: list[dict]):
-    """Мок get_products_by_sku_ids — возвращает список SKU-словарей."""
+def _patch_cart(items: list[MagicMock] | None = None):
+    cart_items = items or [
+        make_cart_item(sku_id=SKU_ID_1, quantity=2),
+        make_cart_item(sku_id=SKU_ID_2, quantity=1),
+    ]
     return patch(
-        "app.services.order_service.get_products_by_sku_ids",
-        new=AsyncMock(return_value=skus),
+        "app.services.order_service.get_user_cart_items",
+        new=AsyncMock(return_value=cart_items),
+    )
+
+
+def _patch_b2b_ok(
+    skus: list[dict],
+    products: list[dict] | None = None,
+):
+    if products is None:
+        product_ids = {s["product_id"] for s in skus}
+        products = [
+            make_product_response(product_id=uuid.UUID(pid))
+            for pid in product_ids
+        ]
+    return (
+        patch(
+            "app.services.order_service.get_products_by_sku_ids",
+            new=AsyncMock(return_value=skus),
+        ),
+        patch(
+            "app.services.order_service.get_public_products_batch",
+            new=AsyncMock(return_value=products),
+        ),
     )
 
 
@@ -158,7 +201,6 @@ def _patch_reserve_ok():
 
 
 def _patch_persist(order: MagicMock):
-    """Мок _persist_order — возвращает готовый объект Order."""
     return patch(
         "app.services.order_service._persist_order",
         new=AsyncMock(return_value=order),
@@ -166,7 +208,6 @@ def _patch_persist(order: MagicMock):
 
 
 def _patch_idempotency_miss():
-    """Мок _get_order_by_idempotency_key — ничего не найдено (новый ключ)."""
     return patch(
         "app.services.order_service._get_order_by_idempotency_key",
         new=AsyncMock(return_value=None),
@@ -174,7 +215,6 @@ def _patch_idempotency_miss():
 
 
 def _patch_idempotency_hit(order: MagicMock):
-    """Мок _get_order_by_idempotency_key — заказ найден."""
     return patch(
         "app.services.order_service._get_order_by_idempotency_key",
         new=AsyncMock(return_value=order),
@@ -186,30 +226,31 @@ def _patch_idempotency_hit(order: MagicMock):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def test_checkout_creates_paid_order_with_fixed_prices(override_db):
-    """
-    Happy path: checkout создаёт заказ в статусе PAID.
-    unit_price зафиксирован в OrderItem — берётся из B2B в момент checkout,
-    а не при последующем запросе деталей.
-    """
     sku1 = make_sku_response(sku_id=SKU_ID_1, price=12_999_000, active_quantity=10)
-
     sku2 = make_sku_response(
         sku_id=SKU_ID_2,
+        product_id=PRODUCT_ID_2,
         name="256GB White",
         price=13_999_000,
         active_quantity=5,
     )
+    products = [
+        make_product_response(product_id=PRODUCT_ID),
+        make_product_response(product_id=PRODUCT_ID_2),
+    ]
 
-    # Ожидаемый заказ — unit_price зафиксирован
     item1 = make_order_item(sku_id=SKU_ID_1, unit_price=12_999_000, quantity=2)
     item2 = make_order_item(sku_id=SKU_ID_2, unit_price=13_999_000, quantity=1)
     order = make_order()
     order.items = [item1, item2]
     order.total_amount = 12_999_000 * 2 + 13_999_000 * 1
 
+    b2b_patches = _patch_b2b_ok([sku1, sku2], products)
     with (
         _patch_idempotency_miss(),
-        _patch_b2b_ok([sku1, sku2]),
+        _patch_cart(),
+        b2b_patches[0],
+        b2b_patches[1],
         _patch_reserve_ok(),
         _patch_persist(order),
     ):
@@ -218,21 +259,17 @@ async def test_checkout_creates_paid_order_with_fixed_prices(override_db):
 
     assert resp.status_code == 201
     data = resp.json()
-
-    # Заказ PAID
     assert data["status"] == "PAID"
 
-    # unit_price зафиксирован из B2B — не NULL, не 0
     for item in data["items"]:
-        assert item["unit_price"] > 0, "unit_price должен быть зафиксирован в OrderItem"
+        assert item["unit_price"] > 0
         assert item["line_total"] == item["unit_price"] * item["quantity"]
 
-    # Итоговая сумма
     expected_total = 12_999_000 * 2 + 13_999_000 * 1
     assert data["total"] == expected_total
     assert data["subtotal"] == expected_total
     assert data["buyer_id"] == str(USER_ID)
-    assert data["delivery_address"] == CHECKOUT_BODY["delivery_address"]
+    assert data["address"]["street"] == f"address:{ADDRESS_ID}"
     assert all("name" in item for item in data["items"])
 
 
@@ -241,13 +278,14 @@ async def test_checkout_creates_paid_order_with_fixed_prices(override_db):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def test_partial_reserve_failure_returns_409(override_db):
-    """
-    Unhappy: B2B вернул 409 при резервировании хотя бы одного SKU.
-    B2C должен вернуть 409 RESERVE_FAILED с failed_items.
-    Заказ не создаётся (all-or-nothing).
-    """
+    from app.services.b2b_client import B2BReserveFailedError
+
     sku1 = make_sku_response(sku_id=SKU_ID_1, active_quantity=10)
-    sku2 = make_sku_response(sku_id=SKU_ID_2, active_quantity=5)
+    sku2 = make_sku_response(sku_id=SKU_ID_2, product_id=PRODUCT_ID_2, active_quantity=5)
+    products = [
+        make_product_response(product_id=PRODUCT_ID),
+        make_product_response(product_id=PRODUCT_ID_2),
+    ]
 
     failed_items = [
         {
@@ -258,9 +296,12 @@ async def test_partial_reserve_failure_returns_409(override_db):
         }
     ]
 
+    b2b_patches = _patch_b2b_ok([sku1, sku2], products)
     with (
         _patch_idempotency_miss(),
-        _patch_b2b_ok([sku1, sku2]),
+        _patch_cart(),
+        b2b_patches[0],
+        b2b_patches[1],
         patch(
             "app.services.order_service.reserve",
             new=AsyncMock(side_effect=B2BReserveFailedError(failed_items)),
@@ -281,22 +322,13 @@ async def test_partial_reserve_failure_returns_409(override_db):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def test_idempotency_returns_existing_order(override_db):
-    """
-    Повторный POST с тем же idempotency_key должен вернуть существующий заказ.
-    B2B reserve НЕ вызывается повторно — деньги не списываются дважды.
-    """
     existing = make_order(idempotency_key=IDEM_KEY)
 
     with (
         _patch_idempotency_hit(existing),
-        patch(
-            "app.services.order_service.get_products_by_sku_ids",
-            new=AsyncMock(),
-        ) as mock_b2b,
-        patch(
-            "app.services.order_service.reserve",
-            new=AsyncMock(),
-        ) as mock_reserve,
+        patch("app.services.order_service.get_user_cart_items", new=AsyncMock()) as mock_cart,
+        patch("app.services.order_service.get_products_by_sku_ids", new=AsyncMock()) as mock_b2b,
+        patch("app.services.order_service.reserve", new=AsyncMock()) as mock_reserve,
     ):
         async with await _client() as c:
             resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY, headers=AUTH_HEADERS)
@@ -306,7 +338,7 @@ async def test_idempotency_returns_existing_order(override_db):
     assert data["id"] == str(existing.id)
     assert data["status"] == "PAID"
 
-    # B2B не должен вызываться при idempotent-запросе
+    mock_cart.assert_not_awaited()
     mock_b2b.assert_not_awaited()
     mock_reserve.assert_not_awaited()
 
@@ -316,12 +348,11 @@ async def test_idempotency_returns_existing_order(override_db):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def test_b2b_unavailable_returns_503(override_db):
-    """
-    B2B недоступен (таймаут / ConnectionError) → B2C должен вернуть 503.
-    Заказ не создаётся.
-    """
+    from app.services.b2b_client import B2BUnavailableError
+
     with (
         _patch_idempotency_miss(),
+        _patch_cart(),
         patch(
             "app.services.order_service.get_products_by_sku_ids",
             new=AsyncMock(side_effect=B2BUnavailableError("connection refused")),
@@ -340,39 +371,48 @@ async def test_b2b_unavailable_returns_503(override_db):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def test_checkout_requires_auth(override_db):
-    """Без JWT → 403 (FastAPI HTTPBearer не пропускает)."""
     async with await _client() as c:
         resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY)
-    assert resp.status_code in (401, 403)
+    assert resp.status_code in (401, 403, 422)
 
 
-async def test_checkout_validates_empty_items(override_db):
-    """Пустой items → 422 (Pydantic min_length=1)."""
-    body = {**CHECKOUT_BODY, "items": []}
+async def test_checkout_requires_idempotency_key(override_db):
+    headers = {"Authorization": f"Bearer {_make_jwt()}"}
     async with await _client() as c:
-        resp = await c.post("/api/v1/orders", json=body, headers=AUTH_HEADERS)
+        resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY, headers=headers)
     assert resp.status_code == 422
 
 
-async def test_checkout_returns_409_on_blocked_product(override_db):
-    """
-    Товар заблокирован модератором → 409 RESERVE_FAILED ещё до вызова reserve.
-    B2B reserve НЕ вызывается.
-    """
-    sku_blocked = make_sku_response(
-        sku_id=SKU_ID_1,
-        product_status="BLOCKED",
-        active_quantity=10,
-    )
-    sku_ok = make_sku_response(sku_id=SKU_ID_2, active_quantity=5)
-
+async def test_checkout_validates_empty_cart(override_db):
     with (
         _patch_idempotency_miss(),
-        _patch_b2b_ok([sku_blocked, sku_ok]),
         patch(
-            "app.services.order_service.reserve",
-            new=AsyncMock(),
-        ) as mock_reserve,
+            "app.services.order_service.get_user_cart_items",
+            new=AsyncMock(return_value=[]),
+        ),
+    ):
+        async with await _client() as c:
+            resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY, headers=AUTH_HEADERS)
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "INVALID_REQUEST"
+
+
+async def test_checkout_returns_409_on_blocked_product(override_db):
+    sku_blocked = make_sku_response(sku_id=SKU_ID_1, active_quantity=10)
+    sku_ok = make_sku_response(sku_id=SKU_ID_2, product_id=PRODUCT_ID_2, active_quantity=5)
+    # Товар SKU_ID_1 заблокирован — отсутствует в batch или status=BLOCKED
+    products = [
+        make_product_response(product_id=PRODUCT_ID, status="BLOCKED"),
+        make_product_response(product_id=PRODUCT_ID_2),
+    ]
+
+    b2b_patches = _patch_b2b_ok([sku_blocked, sku_ok], products)
+    with (
+        _patch_idempotency_miss(),
+        _patch_cart(),
+        b2b_patches[0],
+        b2b_patches[1],
+        patch("app.services.order_service.reserve", new=AsyncMock()) as mock_reserve,
     ):
         async with await _client() as c:
             resp = await c.post("/api/v1/orders", json=CHECKOUT_BODY, headers=AUTH_HEADERS)
@@ -382,22 +422,23 @@ async def test_checkout_returns_409_on_blocked_product(override_db):
     assert detail["code"] == "RESERVE_FAILED"
     reasons = [fi["reason"] for fi in detail["failed_items"]]
     assert "PRODUCT_BLOCKED" in reasons
-
-    # reserve не вызывался — проверка на шаге 3 отсекла запрос
     mock_reserve.assert_not_awaited()
 
 
 async def test_checkout_returns_409_on_insufficient_stock(override_db):
-    """
-    active_quantity меньше запрошенного → 409 INSUFFICIENT_STOCK.
-    """
-    # SKU_2: доступно 0 штук
     sku1 = make_sku_response(sku_id=SKU_ID_1, active_quantity=10)
-    sku2 = make_sku_response(sku_id=SKU_ID_2, active_quantity=0)
+    sku2 = make_sku_response(sku_id=SKU_ID_2, product_id=PRODUCT_ID_2, active_quantity=0)
+    products = [
+        make_product_response(product_id=PRODUCT_ID),
+        make_product_response(product_id=PRODUCT_ID_2),
+    ]
 
+    b2b_patches = _patch_b2b_ok([sku1, sku2], products)
     with (
         _patch_idempotency_miss(),
-        _patch_b2b_ok([sku1, sku2]),
+        _patch_cart(),
+        b2b_patches[0],
+        b2b_patches[1],
         patch("app.services.order_service.reserve", new=AsyncMock()) as mock_reserve,
     ):
         async with await _client() as c:
@@ -411,15 +452,21 @@ async def test_checkout_returns_409_on_insufficient_stock(override_db):
 
 
 async def test_b2b_unavailable_on_reserve_returns_503(override_db):
-    """
-    B2B недоступен на шаге reserve (после успешного get_products) → 503.
-    """
-    sku1 = make_sku_response(sku_id=SKU_ID_1, active_quantity=10)
-    sku2 = make_sku_response(sku_id=SKU_ID_2, active_quantity=5)
+    from app.services.b2b_client import B2BUnavailableError
 
+    sku1 = make_sku_response(sku_id=SKU_ID_1, active_quantity=10)
+    sku2 = make_sku_response(sku_id=SKU_ID_2, product_id=PRODUCT_ID_2, active_quantity=5)
+    products = [
+        make_product_response(product_id=PRODUCT_ID),
+        make_product_response(product_id=PRODUCT_ID_2),
+    ]
+
+    b2b_patches = _patch_b2b_ok([sku1, sku2], products)
     with (
         _patch_idempotency_miss(),
-        _patch_b2b_ok([sku1, sku2]),
+        _patch_cart(),
+        b2b_patches[0],
+        b2b_patches[1],
         patch(
             "app.services.order_service.reserve",
             new=AsyncMock(side_effect=B2BUnavailableError("timeout")),

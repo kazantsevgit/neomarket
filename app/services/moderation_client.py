@@ -151,3 +151,40 @@ def emit_product_edited(
         },
     }
     asyncio.create_task(_send(body))
+
+async def _send_b2c(payload: dict) -> None:
+    """Отправка события в B2C (fire-and-forget)."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                settings.B2C_URL + "/api/v1/b2b/events",
+                json=payload,
+                headers={
+                    "X-Service-Key": settings.B2C_SERVICE_KEY,
+                    "Content-Type": "application/json",
+                },
+            )
+            resp.raise_for_status()
+            logger.info("b2c event sent event_type=%s", payload.get("event_type"))
+    except Exception as exc:
+        logger.error("failed to send b2c event: %s", exc)
+
+
+def emit_product_deleted_to_b2c(
+    *,
+    product_id: uuid.UUID,
+    sku_ids: list,
+    occurred_at: datetime | None = None,
+) -> None:
+    """
+    Событие PRODUCT_DELETED в B2C — B2C использует sku_ids
+    для пометки корзин с удалёнными позициями.
+    """
+    ts = occurred_at or datetime.now(timezone.utc)
+    payload = {
+        "event_type": "PRODUCT_DELETED",
+        "occurred_at": ts.isoformat(),
+        "product_id": str(product_id),
+        "sku_ids": [str(s) for s in sku_ids],
+    }
+    asyncio.create_task(_send_b2c(payload))

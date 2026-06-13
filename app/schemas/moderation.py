@@ -28,6 +28,33 @@ class DeclineResponse(BaseModel):
     status: str
 
 
+class TicketResponse(BaseModel):
+    id: uuid.UUID
+    product_id: uuid.UUID
+    seller_id: uuid.UUID
+    category_id: uuid.UUID | None = None
+    kind: str
+    status: str
+    queue_priority: int = 3
+    assigned_moderator_id: uuid.UUID | None = None
+    claimed_at: datetime | None = None
+    claim_expires_at: datetime | None = None
+    decision_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class BlockFieldReport(BaseModel):
+    field_path: str
+    message: str
+
+
+class BlockDecisionRequest(BaseModel):
+    blocking_reason_ids: list[uuid.UUID]
+    comment: str | None = Field(None, max_length=2000)
+    field_reports: list[BlockFieldReport] | None = None
+
+
 class ApproveRequest(BaseModel):
     moderator_comment: Optional[str] = Field(None, max_length=2000)
 

@@ -18,6 +18,8 @@ from app.schemas.cart import (
     CartItemUpdateRequest,
     CartResponse,
     CartItem as CartItemResponse,
+    CartValidationIssue,
+    CartValidationResponse,
 )
 from app.services import b2b_client
 
@@ -111,7 +113,7 @@ def _b2b_sku_to_cart_item(
     if isinstance(images, list) and images:
         try:
             first = min(images, key=lambda im: int(im.get("ordering", 0)))
-            image = {"url": first.get("url"), "ordering": int(first.get("ordering", 0))}
+            image = {"id": str(first.get("id") or uuid.uuid4()), "url": first.get("url"), "ordering": int(first.get("ordering", 0))}
         except Exception:
             image = None
 
@@ -129,6 +131,11 @@ def _b2b_sku_to_cart_item(
         unavailable_reason=unavailable_reason,
         image=image,
     )
+
+
+async def get_user_cart_items(db: AsyncSession, user_id: uuid.UUID) -> list[CartItemDB]:
+    """Позиции корзины авторизованного покупателя (для checkout)."""
+    return await _get_cart_items(db, user_id=user_id, session_id=None)
 
 
 async def _get_cart_items(
@@ -277,12 +284,12 @@ async def add_sku_to_cart(
     product = sku_dict.get("product") or {}
     product_deleted = bool(product.get("deleted", False))
     product_status = product.get("status")
-    if product_deleted or product_status in ("BLOCKED", "HARD_BLOCKED", "REJECTED"):
+    if product_deleted or product_status in ("BLOCKED", "HARD_BLOCKED", "REJECTED", "ON_MODERATION"):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "PRODUCT_BLOCKED", "message": "Товар недоступен"},
         )
-    if product_status not in ("MODERATED", "PUBLISHED", "ON_MODERATION", None):
+    if product_status not in ("MODERATED", "PUBLISHED", None):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "PRODUCT_BLOCKED", "message": "Товар недоступен"},
@@ -471,9 +478,50 @@ async def validate_cart(
     *,
     user_id: uuid.UUID | None,
     session_id: uuid.UUID | None,
-) -> Any:
-    # MVP: валидируем по тому же обогащению, что и GET /cart.
+) -> CartValidationResponse:
     cart = await get_cart_enriched(db, user_id=user_id, session_id=session_id)
-    issues = []
-    return {"is_valid": cart.is_valid, "cart": cart, "issues": issues}
+    issues: list[CartValidationIssue] = []
+
+    for item in cart.items:
+        if not item.is_available:
+            if item.unavailable_reason == "OUT_OF_STOCK":
+                issues.append(CartValidationIssue(
+                    sku_id=item.sku_id,
+                    type="OUT_OF_STOCK",
+                    message="Товар закончился на складе",
+                    new_value=str(item.available_quantity),
+                ))
+            elif item.unavailable_reason == "QUANTITY_REDUCED":
+                issues.append(CartValidationIssue(
+                    sku_id=item.sku_id,
+                    type="QUANTITY_REDUCED",
+                    message="Доступное количество уменьшилось",
+                    new_value=str(item.available_quantity),
+                ))
+            elif item.unavailable_reason in ("PRODUCT_BLOCKED", "ON_MODERATION"):
+                issues.append(CartValidationIssue(
+                    sku_id=item.sku_id,
+                    type="PRODUCT_BLOCKED",
+                    message="Товар заблокирован или на модерации",
+                ))
+            elif item.unavailable_reason == "PRODUCT_DELETED":
+                issues.append(CartValidationIssue(
+                    sku_id=item.sku_id,
+                    type="PRODUCT_DELETED",
+                    message="Товар удалён",
+                ))
+        elif item.unit_price_at_add is not None and item.unit_price != item.unit_price_at_add:
+            issues.append(CartValidationIssue(
+                sku_id=item.sku_id,
+                type="PRICE_CHANGED",
+                message="Цена изменилась",
+                old_value=str(item.unit_price_at_add),
+                new_value=str(item.unit_price),
+            ))
+
+    return CartValidationResponse(
+        is_valid=len(issues) == 0,
+        cart=cart,
+        issues=issues,
+    )
 

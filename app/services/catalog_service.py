@@ -18,6 +18,7 @@ from app.schemas.catalog import (
     ProductShortListResponse,
 )
 from app.schemas.errors import VALID_SORTS, invalid_request, invalid_sort_error
+from app.schemas.product import CatalogImageRef
 
 # ========== from main ==========
 _CATALOG_LOAD_OPTIONS = [
@@ -119,7 +120,7 @@ def _sku_price_subquery():
 
 
 def _validate_sort(sort: str | None) -> str:
-    chosen = sort or "rating"
+    chosen = sort or "popularity"
     if chosen not in VALID_SORTS:
         raise invalid_sort_error()
     return chosen
@@ -130,11 +131,9 @@ def _apply_sort(stmt: Select, sort: str, price_sq) -> Select:
         return stmt.order_by(price_sq.c.min_price.asc())
     if sort == "price_desc":
         return stmt.order_by(price_sq.c.min_price.desc())
-    if sort == "date_desc":
+    if sort == "new":
         return stmt.order_by(Product.created_at.desc())
-    if sort == "discount_desc":
-        return stmt.order_by(price_sq.c.max_discount.desc())
-    # rating, popularity — MVP: по дате создания
+    # popularity — MVP: по дате создания
     return stmt.order_by(Product.created_at.desc())
 
 
@@ -205,6 +204,7 @@ async def list_catalog_products(
     offset: int = 0,
     min_price: int | None = None,
     max_price: int | None = None,
+    product_ids: list[uuid.UUID] | None = None,
 ) -> ProductShortListResponse:
     """Основной метод получения списка товаров для B2C-каталога (фильтры, сортировка, пагинация)."""
     if search is not None:
@@ -226,23 +226,36 @@ async def list_catalog_products(
         max_price=max_price,
     )
 
+    if product_ids is not None:
+        stmt = stmt.where(Product.id.in_(product_ids))
+
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.execute(count_stmt)).scalar_one()
 
     stmt = _apply_sort(stmt, chosen_sort, price_sq).limit(limit).offset(offset)
     rows = (await db.execute(stmt)).all()
 
-    items = [
-        ProductShortItem(
-            id=product.id,
-            title=product.title,
-            image=_cover_image(product),
-            price=int(min_price_val),
-            in_stock=True,  # всегда true, т.к. товары с наличием уже отфильтрованы
-            is_in_cart=False,  # будет заполнено выше (корзина) — пока заглушка
+    items = []
+    for product, min_price_val in rows:
+        has_stock = any(
+            max(0, sku.stock_quantity - sku.reserved_quantity) > 0
+            for sku in product.skus
         )
-        for product, min_price_val in rows
-    ]
+        images = []
+        if product.images:
+            for img in product.images:
+                images.append(CatalogImageRef(
+                    id=uuid.UUID(img["id"]) if isinstance(img["id"], str) else img["id"],
+                    url=img["url"],
+                    ordering=img.get("ordering", 0),
+                ))
+        items.append(ProductShortItem(
+            id=product.id,
+            name=product.title,
+            min_price=int(min_price_val),
+            has_stock=has_stock,
+            images=images,
+        ))
 
     return ProductShortListResponse(
         items=items,

@@ -1,9 +1,8 @@
 import app.models  # noqa: F401 — регистрация ORM-моделей
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException
 
 from app.routers.catalog import router as catalog_router
 from app.routers.products import router as products_router
@@ -39,6 +38,9 @@ app.include_router(auth_router)
 app.include_router(invoices_router)
 app.include_router(events_router)
 app.include_router(b2b_events_router)
+app.include_router(b2b_events_router)
+app.include_router(invoices_router)
+app.include_router(events_router)
 
 
 @app.exception_handler(HTTPException)

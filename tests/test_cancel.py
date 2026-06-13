@@ -129,7 +129,8 @@ async def test_cancel_paid_order_transitions_to_cancelled(override_db):
     assert data["buyer_id"] == str(USER_ID)
     assert data["subtotal"] > 0
     assert data["total"] == data["subtotal"]
-    assert data["delivery_address"] == order.delivery_address
+    # address — объект по контракту; street содержит строку delivery_address
+    assert data["address"]["street"] == order.delivery_address
     assert all("name" in item for item in data["items"])
     assert order.status == OrderStatus.CANCELLED
     db.commit.assert_awaited_once()
