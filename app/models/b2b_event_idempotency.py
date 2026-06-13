@@ -14,7 +14,6 @@ def _utcnow() -> datetime:
 class B2BEventIdempotency(Base):
     __tablename__ = "b2b_event_idempotency"
 
-    product_id = Column(UUID(as_uuid=True), primary_key=True)
-    event_date = Column(DateTime(timezone=True), primary_key=True)
+    idempotency_key = Column(UUID(as_uuid=True), primary_key=True)
     event_type = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
