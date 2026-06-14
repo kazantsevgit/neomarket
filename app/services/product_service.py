@@ -156,11 +156,9 @@ async def delete_product(
 ) -> None:
     """
     Мягкое удаление товара (soft delete).
-    - HARD_BLOCKED → 403
-    - Уже удалён → 400
-    - Чужой товар → 404 (IDOR-защита)
-    После коммита: два fire-and-forget события:
-      1. DELETED → Moderation (снять с очереди)
+    HARD_BLOCKED → 403, уже удалён → 400, чужой → 404.
+    После коммита два fire-and-forget:
+      1. DELETED → Moderation (снять с очереди модерации)
       2. PRODUCT_DELETED → B2C (пометить корзины по sku_ids)
     """
     product = await get_product(db, product_id, seller_id=seller_id)
@@ -184,10 +182,14 @@ async def delete_product(
 
     await db.commit()
 
+    # 1. Событие в Moderation — передаём все обязательные поля сигнатуры
     emit_product_deleted(
         product_id=product.id,
         seller_id=product.seller_id,
+        category_id=product.category_id,
+        title=product.title,
     )
+    # 2. Событие в B2C с sku_ids для пометки корзин
     emit_product_deleted_to_b2c(
         product_id=product.id,
         sku_ids=sku_ids,

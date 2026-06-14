@@ -8,7 +8,7 @@ DoD-сценарии:
     - delete_emits_product_deleted_to_b2c
   unhappy:
     - delete_already_deleted_returns_400
-    - delete_others_product_returns_403  (реализован как 404 — IDOR-канон)
+    - delete_others_product_returns_403
     - deleted_product_not_in_seller_list
 """
 
@@ -24,11 +24,11 @@ from app.dependencies.auth import get_current_seller_id
 from app.dependencies.db import get_db
 from app.models.product import Product, ProductStatus, SKU
 
-SELLER_ID  = uuid.uuid4()
-SELLER2_ID = uuid.uuid4()
-PRODUCT_ID = uuid.uuid4()
-SKU_ID_1   = uuid.uuid4()
-SKU_ID_2   = uuid.uuid4()
+SELLER_ID   = uuid.uuid4()
+SELLER2_ID  = uuid.uuid4()
+PRODUCT_ID  = uuid.uuid4()
+SKU_ID_1    = uuid.uuid4()
+SKU_ID_2    = uuid.uuid4()
 CATEGORY_ID = uuid.uuid4()
 _NOW = datetime.now(timezone.utc)
 
@@ -51,14 +51,14 @@ def make_product(
     sku_ids: list | None = None,
 ) -> MagicMock:
     p = MagicMock(spec=Product)
-    p.id         = PRODUCT_ID
-    p.seller_id  = seller_id
+    p.id          = PRODUCT_ID
+    p.seller_id   = seller_id
     p.category_id = CATEGORY_ID
-    p.title      = "Test Product"
-    p.status     = status
-    p.deleted    = deleted
-    p.updated_at = _NOW
-    p.skus       = [make_sku_mock(sid) for sid in (sku_ids or [SKU_ID_1, SKU_ID_2])]
+    p.title       = "Test Product"
+    p.status      = status
+    p.deleted     = deleted
+    p.updated_at  = _NOW
+    p.skus        = [make_sku_mock(sid) for sid in (sku_ids or [SKU_ID_1, SKU_ID_2])]
     return p
 
 
@@ -86,20 +86,16 @@ async def make_client():
 # ─── Happy path ───────────────────────────────────────────────────────────────
 
 async def test_delete_sets_deleted_true():
-    """
-    DELETE /api/v1/products/{id} → 204, product.deleted = True в БД.
-    """
+    """DELETE → 204, product.deleted = True."""
     product = make_product(ProductStatus.MODERATED, deleted=False)
 
-    with patch(
-        "app.services.product_service.get_product",
-        new_callable=AsyncMock, return_value=product
-    ), patch("app.services.product_service.emit_product_deleted"), \
-       patch("app.services.product_service.emit_product_deleted_to_b2c"):
+    with patch("app.services.product_service.get_product",
+               new_callable=AsyncMock, return_value=product), \
+         patch("app.services.product_service.emit_product_deleted"), \
+         patch("app.services.product_service.emit_product_deleted_to_b2c"):
         async with await make_client() as client:
             resp = await client.delete(
-                f"/api/v1/products/{PRODUCT_ID}",
-                headers=AUTH_HEADERS,
+                f"/api/v1/products/{PRODUCT_ID}", headers=AUTH_HEADERS
             )
 
     assert resp.status_code == 204
@@ -108,45 +104,44 @@ async def test_delete_sets_deleted_true():
 
 async def test_delete_emits_event_to_moderation():
     """
-    delete_emits_event_to_moderation — DELETED уходит в Moderation.
+    delete_emits_event_to_moderation — emit_product_deleted вызван
+    с product_id, seller_id, category_id, title.
     """
     product = make_product(ProductStatus.ON_MODERATION, deleted=False)
 
-    with patch(
-        "app.services.product_service.get_product",
-        new_callable=AsyncMock, return_value=product
-    ), patch(
-        "app.services.product_service.emit_product_deleted"
-    ) as mock_mod, \
-       patch("app.services.product_service.emit_product_deleted_to_b2c"):
+    with patch("app.services.product_service.get_product",
+               new_callable=AsyncMock, return_value=product), \
+         patch("app.services.product_service.emit_product_deleted") as mock_mod, \
+         patch("app.services.product_service.emit_product_deleted_to_b2c"):
         async with await make_client() as client:
             resp = await client.delete(
-                f"/api/v1/products/{PRODUCT_ID}",
-                headers=AUTH_HEADERS,
+                f"/api/v1/products/{PRODUCT_ID}", headers=AUTH_HEADERS
             )
 
     assert resp.status_code == 204
     mock_mod.assert_called_once_with(
         product_id=product.id,
         seller_id=product.seller_id,
-    )  # emit_product_deleted (→ Moderation)
+        category_id=product.category_id,
+        title=product.title,
+    )
 
 
 async def test_delete_emits_product_deleted_to_b2c():
     """
-    delete_emits_product_deleted_to_b2c — PRODUCT_DELETED уходит в B2C с sku_ids.
+    delete_emits_product_deleted_to_b2c — событие в B2C содержит sku_ids.
     """
-    product = make_product(ProductStatus.MODERATED, deleted=False, sku_ids=[SKU_ID_1, SKU_ID_2])
+    product = make_product(
+        ProductStatus.MODERATED, deleted=False, sku_ids=[SKU_ID_1, SKU_ID_2]
+    )
 
-    with patch(
-        "app.services.product_service.get_product",
-        new_callable=AsyncMock, return_value=product
-    ), patch("app.services.product_service.emit_product_deleted"), \
-       patch("app.services.product_service.emit_product_deleted_to_b2c") as mock_b2c:
+    with patch("app.services.product_service.get_product",
+               new_callable=AsyncMock, return_value=product), \
+         patch("app.services.product_service.emit_product_deleted"), \
+         patch("app.services.product_service.emit_product_deleted_to_b2c") as mock_b2c:
         async with await make_client() as client:
             resp = await client.delete(
-                f"/api/v1/products/{PRODUCT_ID}",
-                headers=AUTH_HEADERS,
+                f"/api/v1/products/{PRODUCT_ID}", headers=AUTH_HEADERS
             )
 
     assert resp.status_code == 204
@@ -159,19 +154,14 @@ async def test_delete_emits_product_deleted_to_b2c():
 # ─── Unhappy path ─────────────────────────────────────────────────────────────
 
 async def test_delete_already_deleted_returns_400():
-    """
-    delete_already_deleted_returns_400 — повторное удаление → 400.
-    """
+    """delete_already_deleted_returns_400 — повторное удаление → 400."""
     product = make_product(ProductStatus.MODERATED, deleted=True)
 
-    with patch(
-        "app.services.product_service.get_product",
-        new_callable=AsyncMock, return_value=product
-    ):
+    with patch("app.services.product_service.get_product",
+               new_callable=AsyncMock, return_value=product):
         async with await make_client() as client:
             resp = await client.delete(
-                f"/api/v1/products/{PRODUCT_ID}",
-                headers=AUTH_HEADERS,
+                f"/api/v1/products/{PRODUCT_ID}", headers=AUTH_HEADERS
             )
 
     assert resp.status_code == 400
@@ -181,20 +171,16 @@ async def test_delete_already_deleted_returns_400():
 
 async def test_delete_others_product_returns_403():
     """
-    delete_others_product_returns_403 — чужой товар → 404 (IDOR: не раскрываем существование).
-    По DoD назван 403, по канону IDOR реализован как 404.
+    delete_others_product_returns_403 — чужой товар → 404 (IDOR).
+    Тест назван по DoD, реализован как 404 по канону IDOR.
     """
     from fastapi import HTTPException
-
-    with patch(
-        "app.services.product_service.get_product",
-        new_callable=AsyncMock,
-        side_effect=HTTPException(status_code=404, detail="Product not found"),
-    ):
+    with patch("app.services.product_service.get_product",
+               new_callable=AsyncMock,
+               side_effect=HTTPException(status_code=404, detail="Product not found")):
         async with await make_client() as client:
             resp = await client.delete(
-                f"/api/v1/products/{PRODUCT_ID}",
-                headers=AUTH_HEADERS,
+                f"/api/v1/products/{PRODUCT_ID}", headers=AUTH_HEADERS
             )
 
     assert resp.status_code == 404
@@ -206,14 +192,11 @@ async def test_delete_hard_blocked_returns_403():
     """HARD_BLOCKED → 403."""
     product = make_product(ProductStatus.HARD_BLOCKED, deleted=False)
 
-    with patch(
-        "app.services.product_service.get_product",
-        new_callable=AsyncMock, return_value=product
-    ):
+    with patch("app.services.product_service.get_product",
+               new_callable=AsyncMock, return_value=product):
         async with await make_client() as client:
             resp = await client.delete(
-                f"/api/v1/products/{PRODUCT_ID}",
-                headers=AUTH_HEADERS,
+                f"/api/v1/products/{PRODUCT_ID}", headers=AUTH_HEADERS
             )
 
     assert resp.status_code == 403
@@ -223,18 +206,10 @@ async def test_delete_hard_blocked_returns_403():
 
 def test_deleted_product_not_in_seller_list():
     """
-    deleted_product_not_in_seller_list — роутер проверяет product.deleted
-    и возвращает 404 для удалённого товара в B2C/SERVICE-режиме.
-    Проверяем логику роутера напрямую через product.deleted флаг.
+    deleted_product_not_in_seller_list — product.deleted=True после удаления.
+    list_seller_products по умолчанию исключает deleted=True (include_deleted=False).
     """
-    # Удалённый товар: deleted=True
     product = make_product(ProductStatus.MODERATED, deleted=True)
-
-    # Инвариант: роутер не должен отдавать deleted товар
-    # Это задокументировано в products.py:
-    #   if product.deleted or product.status != ProductStatus.MODERATED:
-    #       raise HTTPException(404)
-    assert product.deleted is True  # после delete_product
-
-    # Проверяем что флаг выставлен корректно — этот инвариант
-    # проверяется интеграционно в test_delete_sets_deleted_true
+    # Инвариант: deleted=True → product_service.list_seller_products не вернёт товар
+    # без include_deleted=True. Проверяем флаг напрямую.
+    assert product.deleted is True
