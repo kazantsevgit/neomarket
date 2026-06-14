@@ -26,12 +26,14 @@ from typing import Optional
 import httpx
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.blocking_reason import BlockingReason
 from app.models.moderation_event import ModerationEventIdempotency
 from app.models.product import Product, ProductStatus
+from app.models.product_moderation import ProductModeration
 from app.models.ticket import Ticket, TicketStatus
 from app.models.ticket_field_report import TicketFieldReport
 from app.schemas.moderation import (
@@ -59,7 +61,7 @@ async def _send_product_blocked(product_id: uuid.UUID, hard_block: bool = False)
                     "occurred_at": datetime.now(timezone.utc).isoformat(),
                     "event_type": "BLOCKED",
                     "hard_block": hard_block,
-                    "payload": {"product_id": str(product_id)},
+                    "product_id": str(product_id),
                 },
                 headers={"X-Service-Key": settings.MODERATION_SERVICE_KEY},
             )
@@ -339,6 +341,12 @@ async def block_ticket(
         )
         ticket.field_reports.append(tfr)
 
+    pm_result = await db.execute(
+        select(ProductModeration).where(ProductModeration.product_id == ticket.product_id).limit(1)
+    )
+    pm = pm_result.scalar_one_or_none()
+    queue_priority = pm.queue_priority if pm else 3
+
     emit_product_blocked_to_b2b(product.id, hard_block=is_hard)
 
     await db.commit()
@@ -355,6 +363,7 @@ async def block_ticket(
         category_id=ticket.category_id,
         kind=ticket.kind.value,
         status=ticket.status.value,
+        queue_priority=queue_priority,
         assigned_moderator_id=ticket.assigned_moderator_id,
         decision_at=ticket.decision_at,
         created_at=ticket.created_at,
