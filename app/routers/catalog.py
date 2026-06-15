@@ -17,6 +17,7 @@ from app.models.product import Product, ProductStatus
 from app.schemas.catalog import FacetsResponse, ProductShortListResponse
 from app.schemas.errors import VALID_SORTS, invalid_sort_error
 from app.services import b2b_client
+from app.services.catalog_service import validate_search_query
 from app.services.product_presenter import product_to_catalog_detail
 
 router = APIRouter(prefix="/api/v1", tags=["Catalog"])
@@ -39,6 +40,7 @@ async def list_products(
     filter: dict | None = Depends(parse_catalog_filters_query),
 ) -> ProductShortListResponse:
     validated_sort = _validate_sort_param(sort)
+    validate_search_query(q)
 
     category_id = None
     min_price = None
@@ -74,6 +76,7 @@ async def get_catalog_facets(
     q: str | None = None,
     filter: dict | None = Depends(parse_catalog_filters_query),
 ) -> FacetsResponse:
+    validate_search_query(q)
     filters = None
     if filter:
         known = {"category_id", "price_min", "price_max", "seller_id"}

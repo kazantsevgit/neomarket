@@ -34,6 +34,54 @@ _HAS_IN_STOCK_SKU = exists(
 )
 
 
+# ========== B2C-2: текстовый поиск ==========
+
+MIN_SEARCH_LENGTH = 3
+MAX_SEARCH_LENGTH = 255
+
+
+def validate_search_query(search: str | None) -> str | None:
+    """Валидация длины поискового запроса (B2C-2 edge cases).
+
+    Бросает 400 INVALID_REQUEST, если запрос короче 3 или длиннее 255 символов.
+    Возвращает запрос без изменений (экранирование делается отдельно, в SQL-условии).
+    """
+    if search is None:
+        return None
+    if len(search) < MIN_SEARCH_LENGTH:
+        raise invalid_request("Search query must be at least 3 characters")
+    if len(search) > MAX_SEARCH_LENGTH:
+        raise invalid_request("Search query must be at most 255 characters")
+    return search
+
+
+def _escape_like(value: str) -> str:
+    """Экранирование спецсимволов SQL LIKE (`%`, `_`, `\\`) перед оборачиванием в `%...%`.
+
+    Без экранирования `%` и `_` в пользовательском вводе интерпретируются как
+    LIKE-wildcard'ы, что приводит к неожиданным/мусорным результатам поиска
+    (например, поиск "iPhone%15" или "кофе_"). Параметризация SQLAlchemy уже
+    защищает от инъекций (в т.ч. одинарных кавычек), но не от wildcard-семантики.
+    """
+    return (
+        value.replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
+def _search_pattern(search: str) -> str:
+    return f"%{_escape_like(search)}%"
+
+
+def _search_condition(search: str):
+    pattern = _search_pattern(search)
+    return or_(
+        Product.title.ilike(pattern, escape="\\"),
+        Product.description.ilike(pattern, escape="\\"),
+    )
+
+
 def _sku_active_quantity(sku: SKU) -> int:
     """Вычисление доступного количества (не забронированного)."""
     return max(0, sku.stock_quantity - sku.reserved_quantity)
@@ -170,13 +218,7 @@ def _build_base_stmt(
         stmt = stmt.where(Product.category_id == category_id)
 
     if search:
-        pattern = f"%{search}%"
-        stmt = stmt.where(
-            or_(
-                Product.title.ilike(pattern),
-                Product.description.ilike(pattern),
-            )
-        )
+        stmt = stmt.where(_search_condition(search))
 
     if min_price is not None:
         stmt = stmt.where(price_sq.c.min_price >= min_price)
@@ -207,11 +249,7 @@ async def list_catalog_products(
     product_ids: list[uuid.UUID] | None = None,
 ) -> ProductShortListResponse:
     """Основной метод получения списка товаров для B2C-каталога (фильтры, сортировка, пагинация)."""
-    if search is not None:
-        if len(search) < 3:
-            raise invalid_request("Search query must be at least 3 characters")
-        if len(search) > 255:
-            raise invalid_request("Search query must be at most 255 characters")
+    search = validate_search_query(search)
 
     limit = min(max(limit, 1), 100)
     offset = max(offset, 0)
@@ -278,6 +316,8 @@ async def list_visible_products(
 
     Возвращает (products, total_count).
     """
+    search = validate_search_query(search)
+
     conditions = [
         Product.status == ProductStatus.MODERATED,
         Product.deleted.is_(False),
@@ -288,13 +328,7 @@ async def list_visible_products(
         conditions.append(Product.category_id == category_id)
 
     if search:
-        pattern = f"%{search}%"
-        conditions.append(
-            or_(
-                Product.title.ilike(pattern),
-                Product.description.ilike(pattern),
-            )
-        )
+        conditions.append(_search_condition(search))
 
     if product_ids is not None:
         conditions.append(Product.id.in_(product_ids))
