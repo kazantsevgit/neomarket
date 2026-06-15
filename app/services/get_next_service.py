@@ -31,9 +31,11 @@ def _build_blocking_history(card: ProductModeration) -> BlockingHistory | None:
 
 def _card_to_response(card: ProductModeration) -> GetNextResponse:
     return GetNextResponse(
+        id=card.id,
         product_moderation_id=card.id,
         product_id=card.product_id,
         seller_id=card.seller_id,
+        kind="product",
         status=card.status.value,
         queue_priority=card.queue_priority,
         json_before=card.json_before,

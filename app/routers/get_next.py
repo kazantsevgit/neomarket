@@ -12,7 +12,7 @@ router = APIRouter(tags=["product_moderation"])
 
 
 @router.post(
-    "/api/v1/product-moderation/get-next",
+    "/api/v1/queue/claim",
     response_model=GetNextResponse,
     status_code=status.HTTP_200_OK,
     responses={
@@ -26,7 +26,7 @@ async def get_next_card(
     moderator_id: uuid.UUID = Depends(get_current_moderator_id),
     db: AsyncSession = Depends(get_db),
 ) -> GetNextResponse | Response:
-    queue_id = body.queue_id if body is not None else None
+    queue_id = body.queue_priority if body is not None else None
     card = await claim_next_card(
         db=db,
         moderator_id=moderator_id,
