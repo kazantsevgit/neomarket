@@ -47,7 +47,7 @@ async def list_products_endpoint(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     category: uuid.UUID | None = Query(None, alias="category"),
-    search: str | None = Query(None, min_length=3),
+    search: str | None = Query(None),
     ids: str | None = Query(None, description="Batch: UUID через запятую"),
     status: ProductStatus | None = Query(None),
     include_deleted: bool = Query(False),
