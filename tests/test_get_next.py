@@ -76,9 +76,11 @@ async def _client() -> AsyncClient:
 
 def _assert_card_response(resp, card: MagicMock) -> None:
     data = resp.json()
+    assert data["id"] == str(card.id)
     assert data["product_moderation_id"] == str(card.id)
     assert data["product_id"] == str(card.product_id)
     assert data["seller_id"] == str(card.seller_id)
+    assert data["kind"] == "product"
     assert data["status"] == "IN_REVIEW"
     assert data["queue_priority"] == card.queue_priority
 
@@ -113,8 +115,8 @@ async def test_next_returns_oldest_pending(override_db):
 
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
-            json={"queue_id": 1},
+            "/api/v1/queue/claim",
+            json={"queue_priority": 1},
             headers=AUTH_HEADER,
         )
 
@@ -144,8 +146,8 @@ async def test_empty_queue_returns_204(override_db):
 
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
-            json={"queue_id": 1},
+            "/api/v1/queue/claim",
+            json={"queue_priority": 1},
             headers=AUTH_HEADER,
         )
 
@@ -169,8 +171,8 @@ async def test_moderator_already_has_in_review_returns_409(override_db):
 
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
-            json={"queue_id": 1},
+            "/api/v1/queue/claim",
+            json={"queue_priority": 1},
             headers=AUTH_HEADER,
         )
 
@@ -185,8 +187,8 @@ async def test_invalid_queue_id_returns_422(override_db):
     """queue_id=5 → 422 Validation Error."""
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
-            json={"queue_id": 5},
+            "/api/v1/queue/claim",
+            json={"queue_priority": 5},
             headers=AUTH_HEADER,
         )
 
@@ -197,8 +199,8 @@ async def test_queue_id_zero_returns_422(override_db):
     """queue_id=0 → 422."""
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
-            json={"queue_id": 0},
+            "/api/v1/queue/claim",
+            json={"queue_priority": 0},
             headers=AUTH_HEADER,
         )
 
@@ -233,7 +235,7 @@ async def test_auto_priority_tries_1_to_4(override_db):
 
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
+            "/api/v1/queue/claim",
             json={},
             headers=AUTH_HEADER,
         )
@@ -263,7 +265,7 @@ async def test_auto_priority_all_empty_returns_204(override_db):
 
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
+            "/api/v1/queue/claim",
             json={},
             headers=AUTH_HEADER,
         )
@@ -291,8 +293,8 @@ async def test_specific_queue_returns_card(override_db):
 
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
-            json={"queue_id": 2},
+            "/api/v1/queue/claim",
+            json={"queue_priority": 2},
             headers=AUTH_HEADER,
         )
 
@@ -335,7 +337,7 @@ async def test_blocking_history_present(override_db):
 
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
+            "/api/v1/queue/claim",
             json={},
             headers=AUTH_HEADER,
         )
@@ -366,8 +368,8 @@ async def test_blocking_history_null_for_new(override_db):
 
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
-            json={"queue_id": 1},
+            "/api/v1/queue/claim",
+            json={"queue_priority": 1},
             headers=AUTH_HEADER,
         )
 
@@ -383,8 +385,8 @@ async def test_missing_token_returns_403(override_db):
     """Без токена → 403 (HTTPBearer без header)."""
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
-            json={"queue_id": 1},
+            "/api/v1/queue/claim",
+            json={"queue_priority": 1},
         )
 
     assert resp.status_code == 403
@@ -394,8 +396,8 @@ async def test_wrong_token_returns_401(override_db):
     """Невалидный токен → 401."""
     async with await _client() as client:
         resp = await client.post(
-            "/api/v1/product-moderation/get-next",
-            json={"queue_id": 1},
+            "/api/v1/queue/claim",
+            json={"queue_priority": 1},
             headers={"Authorization": "Bearer invalid-token"},
         )
 

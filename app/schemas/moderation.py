@@ -79,7 +79,7 @@ class ModerationEventRequest(BaseModel):
 
 
 class GetNextRequest(BaseModel):
-    queue_id: int | None = Field(
+    queue_priority: int | None = Field(
         None, ge=1, le=4,
         description="Номер очереди (1-4). Если null — автоприоритизация 1→4",
     )
@@ -98,9 +98,11 @@ class BlockingHistory(BaseModel):
 
 
 class GetNextResponse(BaseModel):
+    id: uuid.UUID
     product_moderation_id: uuid.UUID
     product_id: uuid.UUID
     seller_id: uuid.UUID
+    kind: str
     status: str
     queue_priority: int
     json_before: dict | None = None
