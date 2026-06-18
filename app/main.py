@@ -74,3 +74,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=422,
         content={"code": "VALIDATION_ERROR", "message": message},
     )
+
+
+# US-CAT-05: навигация по категориям
+from app.routers.categories import router as categories_router  # noqa: E402
+app.include_router(categories_router)
