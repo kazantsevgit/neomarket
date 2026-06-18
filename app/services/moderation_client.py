@@ -76,15 +76,17 @@ def emit_product_created(
     """
     ts = occurred_at or datetime.now(timezone.utc)
     payload = {
-        "event_type": "CREATED",
+        "event_type": "PRODUCT_CREATED",
         "idempotency_key": str(product_id),
         "occurred_at": ts.isoformat(),
-        "product_id": str(product_id),
-        "seller_id": str(seller_id),
-        "category_id": str(category_id),
-        "title": title,
-        "sku_id": str(sku_id),
-        "price": price,
+        "payload": {
+            "product_id": str(product_id),
+            "seller_id": str(seller_id),
+            "category_id": str(category_id),
+            "title": title,
+            "sku_id": str(sku_id),
+            "price": price,
+        },
     }
     asyncio.create_task(_send(payload))
 
@@ -103,13 +105,15 @@ def emit_product_deleted(
     """
     ts = occurred_at or datetime.now(timezone.utc)
     payload = {
-        "event_type": "DELETED",
+        "event_type": "PRODUCT_DELETED",
         "idempotency_key": str(product_id),
         "occurred_at": ts.isoformat(),
-        "product_id": str(product_id),
-        "seller_id": str(seller_id),
-        "category_id": str(category_id),
-        "title": title,
+        "payload": {
+            "product_id": str(product_id),
+            "seller_id": str(seller_id),
+            "category_id": str(category_id),
+            "title": title,
+        },
     }
     asyncio.create_task(_send(payload))
 
@@ -133,15 +137,17 @@ def emit_product_edited(
     """
     ts = occurred_at or datetime.now(timezone.utc)
     payload = {
-        "event_type": "EDITED",
+        "event_type": "PRODUCT_EDITED",
         "idempotency_key": str(uuid.uuid4()),  # каждое редактирование уникально
         "occurred_at": ts.isoformat(),
-        "product_id": str(product_id),
-        "seller_id": str(seller_id),
-        "category_id": str(category_id),
-        "title": title,
-        "sku_id": str(sku_id),
-        "price": price,
+        "payload": {
+            "product_id": str(product_id),
+            "seller_id": str(seller_id),
+            "category_id": str(category_id),
+            "title": title,
+            "sku_id": str(sku_id),
+            "price": price,
+        },
     }
     asyncio.create_task(_send(payload))
 
@@ -179,7 +185,9 @@ def emit_product_deleted_to_b2c(
         "event_type": "PRODUCT_DELETED",
         "idempotency_key": str(uuid.uuid4()),
         "occurred_at": ts.isoformat(),
-        "product_id": str(product_id),
-        "sku_ids": [str(s) for s in sku_ids],
+        "payload": {
+            "product_id": str(product_id),
+            "sku_ids": [str(s) for s in sku_ids],
+        },
     }
     asyncio.create_task(_send_b2c(payload))
