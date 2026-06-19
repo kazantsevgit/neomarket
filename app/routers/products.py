@@ -208,3 +208,46 @@ async def delete_product_endpoint(
 ) -> None:
     """Удалить товар продавца. HARD_BLOCKED → 403."""
     await delete_product(db=db, product_id=product_id, seller_id=seller_id)
+
+# US-CAT-04: похожие товары
+from app.services.similar_service import get_similar_products  # noqa: E402
+from app.schemas.product import ProductPublicPaginatedResponse  # already imported above
+
+
+@router.get(
+    "/{product_id}/similar",
+    response_model=ProductPublicPaginatedResponse,
+    summary="Похожие товары (US-CAT-04)",
+)
+async def get_similar_products_endpoint(
+    product_id: uuid.UUID,
+    limit: int = Query(8, ge=1, le=20),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> ProductPublicPaginatedResponse:
+    """
+    Возвращает до `limit` товаров из той же категории (исключая текущий).
+    Если товаров мало — расширяет выборку на родительскую категорию.
+
+    * 200 + пустой список — нет похожих
+    * 404 — товар не найден или недоступен
+    """
+    from app.services.product_presenter import product_to_public_short_response
+
+    products, total = await get_similar_products(db, product_id=product_id, limit=limit)
+
+    if products is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "Product not found"},
+        )
+
+    # offset применяется в памяти (выборка уже случайная, объём мал)
+    page = products[offset: offset + limit]
+
+    return ProductPublicPaginatedResponse(
+        items=[product_to_public_short_response(p) for p in page],
+        total_count=total,
+        limit=limit,
+        offset=offset,
+    )
