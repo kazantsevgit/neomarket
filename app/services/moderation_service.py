@@ -39,6 +39,8 @@ from app.models.ticket_field_report import TicketFieldReport
 from app.schemas.moderation import (
     BlockDecisionRequest,
     BlockFieldReport,
+    DeclineProductRequest,
+    DeclineProductResponse,
     DeclineRequest,
     DeclineResponse,
     FieldReport,
@@ -368,4 +370,140 @@ async def block_ticket(
         decision_at=ticket.decision_at,
         created_at=ticket.created_at,
         updated_at=ticket.updated_at,
+    )
+
+
+async def soft_block_product(
+    db: AsyncSession,
+    product_id: uuid.UUID,
+    moderator_id: uuid.UUID,
+    request: DeclineProductRequest,
+) -> DeclineProductResponse:
+    """
+    Мягкая блокировка товара (US-MOD-04).
+
+    IN_REVIEW → BLOCKED, field_reports сохраняются,
+    событие BLOCKED + hard_block=false уходит в B2B.
+    """
+    result = await db.execute(
+        select(Ticket).where(Ticket.product_id == product_id)
+    )
+    ticket: Ticket | None = result.scalar_one_or_none()
+
+    if ticket is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "TICKET_NOT_FOUND", "message": "Ticket not found"},
+        )
+
+    if ticket.status == TicketStatus.HARD_BLOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "ALREADY_HARD_BLOCKED",
+                "message": "Ticket is already HARD_BLOCKED",
+            },
+        )
+
+    if ticket.status != TicketStatus.IN_REVIEW:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "WRONG_STATUS",
+                "message": f"Ticket must be IN_REVIEW, got {ticket.status.value}",
+            },
+        )
+
+    if ticket.assigned_moderator_id != moderator_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "NOT_ASSIGNED",
+                "message": "This moderation card is not assigned to you",
+            },
+        )
+
+    if ticket.edit_pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "EDIT_PENDING",
+                "message": "Product was edited during review",
+            },
+        )
+
+    reason: BlockingReason | None = await db.get(
+        BlockingReason, request.blocking_reason_id
+    )
+    if reason is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "REASON_NOT_FOUND",
+                "message": "Blocking reason not found",
+            },
+        )
+
+    if reason.hard_block:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "REASON_IS_HARD_BLOCK",
+                "message": "Blocking reason is a hard-block reason, use hard-block flow",
+            },
+        )
+
+    product: Product | None = await db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "PRODUCT_NOT_FOUND", "message": "Product not found"},
+        )
+
+    now = datetime.now(timezone.utc)
+
+    product.status = ProductStatus.BLOCKED
+    product.blocking_reason_id = reason.id
+    product.blocking_reason = {
+        "id": str(reason.id),
+        "title": reason.title,
+        "comment": request.moderator_comment or "",
+    }
+    product.moderator_comment = request.moderator_comment
+    product.field_reports = [
+        {
+            "field_name": fr.field_name.value,
+            "sku_id": str(fr.sku_id) if fr.sku_id else None,
+            "comment": fr.comment,
+        }
+        for fr in (request.field_reports or [])
+    ]
+
+    ticket.status = TicketStatus.BLOCKED
+    ticket.blocking_reason_id = reason.id
+    ticket.moderator_comment = request.moderator_comment
+    ticket.decision_at = now
+    ticket.updated_at = now
+
+    ticket.field_reports.clear()
+    for fr in (request.field_reports or []):
+        tfr = TicketFieldReport(
+            ticket_id=ticket.id,
+            field_name=fr.field_name.value,
+            comment=fr.comment,
+        )
+        ticket.field_reports.append(tfr)
+
+    emit_product_blocked_to_b2b(product.id, hard_block=False)
+
+    await db.commit()
+
+    logger.info(
+        "soft_block product_id=%s ticket_id=%s reason=%s",
+        product_id, ticket.id, reason.code,
+    )
+
+    return DeclineProductResponse(
+        product_id=product_id,
+        status=ProductStatus.BLOCKED.value,
     )
