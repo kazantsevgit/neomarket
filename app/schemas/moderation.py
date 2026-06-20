@@ -6,6 +6,33 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class FieldName(str, Enum):
+    TITLE = "title"
+    DESCRIPTION = "description"
+    PRODUCT_IMAGES = "product_images"
+    CATEGORY = "category"
+    SKU_NAME = "sku_name"
+    SKU_IMAGE = "sku_image"
+    SKU_PRICE = "sku_price"
+
+
+class DeclineFieldReport(BaseModel):
+    field_name: FieldName
+    sku_id: Optional[uuid.UUID] = None
+    comment: str = Field(..., max_length=500)
+
+
+class DeclineProductRequest(BaseModel):
+    blocking_reason_id: uuid.UUID
+    moderator_comment: Optional[str] = Field(None, max_length=2000)
+    field_reports: Optional[list[DeclineFieldReport]] = None
+
+
+class DeclineProductResponse(BaseModel):
+    product_id: uuid.UUID
+    status: str
+
+
 class ModerationEventType(str, Enum):
     MODERATED = "MODERATED"
     BLOCKED = "BLOCKED"

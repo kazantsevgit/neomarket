@@ -450,13 +450,24 @@ BLOCK_BODY = {
 }
 
 
+def _make_pm_result(queue_priority: int = 3) -> MagicMock:
+    """Возвращает мок, имитирующий результат db.execute → scalar_one_or_none."""
+    pm = MagicMock()
+    pm.queue_priority = queue_priority
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = pm
+    return result
+
+
 def _db_for_block(
     ticket: MagicMock,
     product: MagicMock | None = None,
     reason: MagicMock | None = None,
+    queue_priority: int = 3,
 ) -> AsyncMock:
     """Настраивает fake_db для block: get(Ticket), get(Product), get(BlockingReason)."""
     db = AsyncMock()
+    db.execute.return_value = _make_pm_result(queue_priority)
 
     def get_side_effect(model_class, pk):
         if model_class == Ticket:

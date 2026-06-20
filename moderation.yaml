@@ -363,6 +363,45 @@ paths:
         '500':
           description: B2B не принял событие
 
+  /api/v1/products/{product_id}/decline:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+    post:
+      tags: [Tickets]
+      summary: Мягкая блокировка товара (US-MOD-04)
+      description: |
+        IN_REVIEW → BLOCKED. Сохраняет field_reports, отправляет событие
+        BLOCKED + hard_block=false в B2B.
+        Причина блокировки должна иметь hard_block=false.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeclineProductRequest' }
+      responses:
+        '200':
+          description: Товар заблокирован (мягкая блокировка)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeclineProductResponse' }
+        '400':
+          description: Неверная причина блокировки или field_name
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Чужая карточка
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Товар не найден
+        '409':
+          description: Неверный статус
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /api/v1/tickets/{ticket_id}/approve:
     parameters:
       - $ref: '#/components/parameters/TicketId'
@@ -563,6 +602,11 @@ components:
       name: offset
       in: query
       schema: { type: integer, minimum: 0, default: 0 }
+    ProductId:
+      name: product_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     TicketId:
       name: ticket_id
       in: path
@@ -831,6 +875,56 @@ components:
         field_reports:
           type: array
           items: { $ref: '#/components/schemas/FieldReport' }
+
+    DeclineFieldReport:
+      type: object
+      required: [field_name, comment]
+      properties:
+        field_name:
+          type: string
+          enum:
+            - title
+            - description
+            - product_images
+            - category
+            - sku_name
+            - sku_image
+            - sku_price
+          description: Допустимые имена полей для замечания
+        sku_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID SKU (null = замечание к товару)
+        comment:
+          type: string
+          maxLength: 500
+
+    DeclineProductRequest:
+      type: object
+      required: [blocking_reason_id]
+      properties:
+        blocking_reason_id:
+          type: string
+          format: uuid
+          description: ID из справочника product_blocking_reasons (hard_block=false)
+        moderator_comment:
+          type: string
+          maxLength: 2000
+        field_reports:
+          type: array
+          items: { $ref: '#/components/schemas/DeclineFieldReport' }
+
+    DeclineProductResponse:
+      type: object
+      required: [product_id, status]
+      properties:
+        product_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [BLOCKED]
 
     PaginatedTickets:
       type: object

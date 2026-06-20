@@ -5,8 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.dependencies.db import get_db
-from app.schemas.moderation import BlockDecisionRequest, TicketResponse
-from app.services.moderation_service import block_ticket
+from app.dependencies.moderator_auth import get_current_moderator_id
+from app.schemas.moderation import (
+    BlockDecisionRequest,
+    DeclineProductRequest,
+    DeclineProductResponse,
+    TicketResponse,
+)
+from app.services.moderation_service import block_ticket, soft_block_product
 
 router = APIRouter(tags=["tickets"])
 
@@ -29,3 +35,23 @@ async def block_ticket_endpoint(
         )
 
     return await block_ticket(db=db, ticket_id=ticket_id, request=body)
+
+
+@router.post(
+    "/api/v1/products/{product_id}/decline",
+    response_model=DeclineProductResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Мягкая блокировка товара (US-MOD-04)",
+)
+async def decline_product_endpoint(
+    product_id: uuid.UUID,
+    body: DeclineProductRequest,
+    moderator_id: uuid.UUID = Depends(get_current_moderator_id),
+    db: AsyncSession = Depends(get_db),
+) -> DeclineProductResponse:
+    return await soft_block_product(
+        db=db,
+        product_id=product_id,
+        moderator_id=moderator_id,
+        request=body,
+    )
