@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.product_moderation import ModerationStatus, ProductModeration
+from app.models.ticket import Ticket
 from app.schemas.moderation import BlockingHistory, BlockingHistoryBlockingReason, GetNextResponse
 
 logger = logging.getLogger(__name__)
@@ -29,19 +30,19 @@ def _build_blocking_history(card: ProductModeration) -> BlockingHistory | None:
     )
 
 
-def _card_to_response(card: ProductModeration) -> GetNextResponse:
+def _card_to_response(card: ProductModeration, kind: str) -> GetNextResponse:
     return GetNextResponse(
         id=card.id,
         product_moderation_id=card.id,
         product_id=card.product_id,
         seller_id=card.seller_id,
-        kind="product",
+        kind=kind,
         status=card.status.value,
         queue_priority=card.queue_priority,
         json_before=card.json_before,
         json_after=card.json_after,
         blocking_history=_build_blocking_history(card),
-        date_created=card.date_created,
+        created_at=card.date_created,
         date_updated=card.date_updated,
     )
 
@@ -70,7 +71,8 @@ async def claim_next_card(
 
     for priority in priorities:
         result = await db.execute(
-            select(ProductModeration)
+            select(ProductModeration, Ticket.kind)
+            .join(Ticket, ProductModeration.product_id == Ticket.product_id)
             .where(
                 ProductModeration.status == ModerationStatus.PENDING,
                 ProductModeration.queue_priority == priority,
@@ -79,13 +81,14 @@ async def claim_next_card(
             .limit(1)
             .with_for_update(skip_locked=True)
         )
-        card = result.scalar_one_or_none()
-        if card is not None:
+        row = result.one_or_none()
+        if row is not None:
+            card, kind = row
             now = datetime.now(timezone.utc)
             card.status = ModerationStatus.IN_REVIEW
             card.moderator_id = moderator_id
             card.date_updated = now
             await db.commit()
-            return _card_to_response(card)
+            return _card_to_response(card, kind)
 
     return None
