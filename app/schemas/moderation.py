@@ -108,5 +108,5 @@ class GetNextResponse(BaseModel):
     json_before: dict | None = None
     json_after: dict | None = None
     blocking_history: BlockingHistory | None = None
-    date_created: datetime
+    created_at: datetime
     date_updated: datetime

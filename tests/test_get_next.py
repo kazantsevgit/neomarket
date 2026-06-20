@@ -80,7 +80,7 @@ def _assert_card_response(resp, card: MagicMock) -> None:
     assert data["product_moderation_id"] == str(card.id)
     assert data["product_id"] == str(card.product_id)
     assert data["seller_id"] == str(card.seller_id)
-    assert data["kind"] == "product"
+    assert data["kind"] == "CREATE"
     assert data["status"] == "IN_REVIEW"
     assert data["queue_priority"] == card.queue_priority
 
@@ -109,7 +109,7 @@ async def test_next_returns_oldest_pending(override_db):
 
     # first FOR UPDATE SKIP LOCKED returns the oldest
     claim_result = MagicMock(spec=Result)
-    claim_result.scalar_one_or_none.return_value = older
+    claim_result.one_or_none.return_value = (older, "CREATE")
 
     db.execute.side_effect = [existing_result, claim_result]
 
@@ -140,7 +140,7 @@ async def test_empty_queue_returns_204(override_db):
     existing_result.scalar_one_or_none.return_value = None
 
     claim_result = MagicMock(spec=Result)
-    claim_result.scalar_one_or_none.return_value = None
+    claim_result.one_or_none.return_value = None
 
     db.execute.side_effect = [existing_result, claim_result]
 
@@ -222,9 +222,9 @@ async def test_auto_priority_tries_1_to_4(override_db):
 
     # 1→2 empty, 3→has card
     empty_result = MagicMock(spec=Result)
-    empty_result.scalar_one_or_none.return_value = None
+    empty_result.one_or_none.return_value = None
     found_result = MagicMock(spec=Result)
-    found_result.scalar_one_or_none.return_value = card_q3
+    found_result.one_or_none.return_value = (card_q3, "CREATE")
 
     db.execute.side_effect = [
         existing_result,   # check existing IN_REVIEW
@@ -253,7 +253,7 @@ async def test_auto_priority_all_empty_returns_204(override_db):
     existing_result.scalar_one_or_none.return_value = None
 
     empty_result = MagicMock(spec=Result)
-    empty_result.scalar_one_or_none.return_value = None
+    empty_result.one_or_none.return_value = None
 
     db.execute.side_effect = [
         existing_result,
@@ -287,7 +287,7 @@ async def test_specific_queue_returns_card(override_db):
     existing_result.scalar_one_or_none.return_value = None
 
     claim_result = MagicMock(spec=Result)
-    claim_result.scalar_one_or_none.return_value = card_q2
+    claim_result.one_or_none.return_value = (card_q2, "CREATE")
 
     db.execute.side_effect = [existing_result, claim_result]
 
@@ -331,7 +331,7 @@ async def test_blocking_history_present(override_db):
     existing_result.scalar_one_or_none.return_value = None
 
     claim_result = MagicMock(spec=Result)
-    claim_result.scalar_one_or_none.return_value = card
+    claim_result.one_or_none.return_value = (card, "CREATE")
 
     db.execute.side_effect = [existing_result, claim_result]
 
@@ -362,7 +362,7 @@ async def test_blocking_history_null_for_new(override_db):
     existing_result.scalar_one_or_none.return_value = None
 
     claim_result = MagicMock(spec=Result)
-    claim_result.scalar_one_or_none.return_value = card
+    claim_result.one_or_none.return_value = (card, "CREATE")
 
     db.execute.side_effect = [existing_result, claim_result]
 
