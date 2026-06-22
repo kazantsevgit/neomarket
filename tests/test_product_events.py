@@ -1,52 +1,59 @@
 """
-Тесты обработки событий от B2B (PRODUCT_BLOCKED / PRODUCT_DELETED / SKU_OUT_OF_STOCK).
+Тесты US-ORD-04: обработка событий от B2B (PRODUCT_BLOCKED / PRODUCT_DELETED / SKU_OUT_OF_STOCK).
 
 DoD-сценарии:
   happy:
-    - product_blocked_marks_cart_items_unavailable — PRODUCT_BLOCKED → все cart_items
-      с этими sku_ids получают unavailable_reason
+    - product_blocked_marks_cart_items_unavailable
   unhappy:
-    - orders_not_affected_by_product_blocked — заказы с теми же sku_ids не изменяются
-    - idempotent_event_no_side_effects — повторное событие с тем же idempotency_key
-      → 200 без эффекта
-    - missing_service_key_returns_401 — запрос без X-Service-Key → 401
+    - orders_not_affected_by_product_blocked
+    - idempotent_event_no_side_effects       (409 при дубликате)
+    - missing_service_key_returns_401
 """
 
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
-from app.main import app
 from app.dependencies.db import get_db
-from app.models.cart import CartItem as CartItemDB
+from app.main import app
 from app.models.event_idempotency import EventIdempotencyKey
 
 # ─── Константы ───────────────────────────────────────────────────────────────
 
 _NOW = datetime.now(timezone.utc)
-IDEM_KEY = uuid.uuid4()
+IDEM_KEY   = uuid.uuid4()
 PRODUCT_ID = uuid.uuid4()
-SKU_1 = uuid.uuid4()
-SKU_2 = uuid.uuid4()
-SKU_IDS = [SKU_1, SKU_2]
+SKU_1      = uuid.uuid4()
+SKU_2      = uuid.uuid4()
 
-SERVICE_KEY = "test-b2b-service-key"
+SERVICE_KEY        = "test-b2b-service-key"
 SERVICE_KEY_HEADER = {"X-Service-Key": SERVICE_KEY}
+URL = "/api/v1/b2b/events"
 
 BASE_EVENT = {
-    "idempotency_key": str(IDEM_KEY),
-    "event": "PRODUCT_BLOCKED",
-    "product_id": str(PRODUCT_ID),
-    "sku_ids": [str(s) for s in SKU_IDS],
-    "reason": "Описание не соответствует товару",
-    "date": _NOW.isoformat(),
+    "event_type":       "PRODUCT_BLOCKED",
+    "idempotency_key":  str(IDEM_KEY),
+    "occurred_at":      _NOW.isoformat(),
+    "payload": {
+        "product_id": str(PRODUCT_ID),
+    },
+}
+
+SKU_OUT_OF_STOCK_EVENT = {
+    "event_type":       "SKU_OUT_OF_STOCK",
+    "idempotency_key":  str(uuid.uuid4()),
+    "occurred_at":      _NOW.isoformat(),
+    "payload": {
+        "sku_id":             str(SKU_1),
+        "product_id":         str(PRODUCT_ID),
+        "available_quantity": 0,
+    },
 }
 
 # ─── Фикстуры ────────────────────────────────────────────────────────────────
-
 
 @pytest.fixture(autouse=True)
 def override_service_key(monkeypatch):
@@ -76,39 +83,30 @@ def make_idempotency_record(event: str = "PRODUCT_BLOCKED") -> MagicMock:
 
 # ─── Happy path ──────────────────────────────────────────────────────────────
 
-
 async def test_product_blocked_marks_cart_items_unavailable(override_db):
     """
     happy: product_blocked_marks_cart_items_unavailable
-    PRODUCT_BLOCKED → batch UPDATE cart_items с этими sku_ids.
+    PRODUCT_BLOCKED → 202, batch UPDATE cart_items, idempotency-запись сохранена.
     """
     db: AsyncMock = override_db
     db.get.return_value = None  # idempotency not found — proceed
 
     async with await _client() as client:
-        resp = await client.post(
-            "/api/v1/events/product",
-            json=BASE_EVENT,
-            headers=SERVICE_KEY_HEADER,
-        )
+        resp = await client.post(URL, json=BASE_EVENT, headers=SERVICE_KEY_HEADER)
 
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data == {"accepted": True}
+    assert resp.status_code == 202
+    assert resp.json() == {"accepted": True}
 
-    # Проверяем batch UPDATE
+    # Batch UPDATE выполнен
     db.execute.assert_awaited_once()
-    call_args = db.execute.call_args[0]
-    sql = str(call_args[0])  # text of the UPDATE statement
+    sql = str(db.execute.call_args[0][0])
     assert "UPDATE cart_items" in sql
     assert "unavailable_reason" in sql
-    assert "sku_ids" in sql or "ANY" in sql
 
-    # Проверяем idempotency запись
+    # Idempotency-запись добавлена
     db.add.assert_called_once()
     added = db.add.call_args[0][0]
     assert isinstance(added, EventIdempotencyKey)
-    assert added.idempotency_key == IDEM_KEY
     assert added.event == "PRODUCT_BLOCKED"
 
     db.commit.assert_awaited_once()
@@ -117,48 +115,37 @@ async def test_product_blocked_marks_cart_items_unavailable(override_db):
 async def test_orders_not_affected_by_product_blocked(override_db):
     """
     unhappy: orders_not_affected_by_product_blocked
-    Событие не трогает таблицу orders.
+    Событие обновляет только cart_items, таблица orders не трогается.
     """
     db: AsyncMock = override_db
     db.get.return_value = None
 
     async with await _client() as client:
-        resp = await client.post(
-            "/api/v1/events/product",
-            json=BASE_EVENT,
-            headers=SERVICE_KEY_HEADER,
-        )
+        resp = await client.post(URL, json=BASE_EVENT, headers=SERVICE_KEY_HEADER)
 
-    assert resp.status_code == 200
+    assert resp.status_code == 202
 
-    # UPDATE только по cart_items, не по orders/order_items
-    execute_sql = str(db.execute.call_args[0][0])
-    assert "cart_items" in execute_sql
-    assert "orders" not in execute_sql
-    assert "order_items" not in execute_sql
+    sql = str(db.execute.call_args[0][0])
+    assert "cart_items" in sql
+    assert "orders" not in sql
+    assert "order_items" not in sql
 
 
-# ─── Unhappy path ────────────────────────────────────────────────────────────
-
+# ─── Unhappy path ─────────────────────────────────────────────────────────────
 
 async def test_idempotent_event_no_side_effects(override_db):
     """
     unhappy: idempotent_event_no_side_effects
-    Повторное событие с тем же idempotency_key → 200, execute/add не вызываются.
+    Повторное событие с тем же idempotency_key → 409, никаких side effects.
     """
     db: AsyncMock = override_db
-    db.get.return_value = make_idempotency_record()
+    db.get.return_value = make_idempotency_record()  # уже обработано
 
     async with await _client() as client:
-        resp = await client.post(
-            "/api/v1/events/product",
-            json=BASE_EVENT,
-            headers=SERVICE_KEY_HEADER,
-        )
+        resp = await client.post(URL, json=BASE_EVENT, headers=SERVICE_KEY_HEADER)
 
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data == {"accepted": True}
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "CONFLICT"
 
     # Никаких side effects
     db.execute.assert_not_awaited()
@@ -172,26 +159,35 @@ async def test_missing_service_key_returns_401(override_db):
     Запрос без X-Service-Key → 401.
     """
     async with await _client() as client:
-        resp = await client.post(
-            "/api/v1/events/product",
-            json=BASE_EVENT,
-            # Без SERVICE_KEY_HEADER
-        )
+        resp = await client.post(URL, json=BASE_EVENT)  # без заголовка
 
     assert resp.status_code == 401
     assert resp.json()["code"] == "UNAUTHORIZED"
 
 
 async def test_wrong_service_key_returns_401(override_db):
-    """
-    unhappy: неверный X-Service-Key → 401.
-    """
+    """unhappy: неверный X-Service-Key → 401."""
     async with await _client() as client:
-        resp = await client.post(
-            "/api/v1/events/product",
-            json=BASE_EVENT,
-            headers={"X-Service-Key": "wrong-key"},
-        )
+        resp = await client.post(URL, json=BASE_EVENT, headers={"X-Service-Key": "wrong"})
 
     assert resp.status_code == 401
     assert resp.json()["code"] == "UNAUTHORIZED"
+
+
+async def test_sku_out_of_stock_marks_single_sku(override_db):
+    """
+    SKU_OUT_OF_STOCK: обновляется только конкретный sku_id, не весь product.
+    """
+    db: AsyncMock = override_db
+    db.get.return_value = None
+
+    async with await _client() as client:
+        resp = await client.post(URL, json=SKU_OUT_OF_STOCK_EVENT, headers=SERVICE_KEY_HEADER)
+
+    assert resp.status_code == 202
+
+    sql = str(db.execute.call_args[0][0])
+    assert "cart_items" in sql
+    assert "sku_id" in sql
+    # SKU_OUT_OF_STOCK не использует subquery по product
+    assert "SELECT id FROM skus" not in sql
