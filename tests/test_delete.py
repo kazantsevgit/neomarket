@@ -171,19 +171,19 @@ async def test_delete_already_deleted_returns_400():
 
 async def test_delete_others_product_returns_403():
     """
-    delete_others_product_returns_403 — чужой товар → 404 (IDOR).
-    Тест назван по DoD, реализован как 404 по канону IDOR.
+    delete_others_product_returns_403 — чужой товар → 403 (IDOR).
+    Продавец пытается удалить товар другого продавца — сервис возвращает 403.
     """
     from fastapi import HTTPException
     with patch("app.services.product_service.get_product",
                new_callable=AsyncMock,
-               side_effect=HTTPException(status_code=404, detail="Product not found")):
+               side_effect=HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Access to this product is forbidden"})):
         async with await make_client() as client:
             resp = await client.delete(
                 f"/api/v1/products/{PRODUCT_ID}", headers=AUTH_HEADERS
             )
 
-    assert resp.status_code == 404
+    assert resp.status_code == 403
     body = resp.json()
     assert {"code", "message"} <= set(body.keys())
 

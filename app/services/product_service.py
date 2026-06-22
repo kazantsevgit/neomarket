@@ -84,7 +84,7 @@ async def get_product(
     *,
     seller_id: uuid.UUID | None = None,
 ) -> Product:
-    """Загрузка карточки. seller_id задан — IDOR: чужой товар → 404."""
+    """Загрузка карточки. seller_id задан — IDOR: чужой товар → 403."""
     product = await db.get(Product, product_id, options=_PRODUCT_LOAD_OPTIONS)
     if product is None:
         raise HTTPException(
@@ -93,8 +93,8 @@ async def get_product(
         )
     if seller_id is not None and product.seller_id != seller_id:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Product not found",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "Access to this product is forbidden"},
         )
     return product
 
