@@ -6,7 +6,7 @@ from app.dependencies.db import get_db
 from app.schemas.events import ProductEventRequest, ProductEventResponse
 from app.services.product_event_service import process_product_event
 
-router = APIRouter(prefix="/api/v1/events", tags=["events"])
+router = APIRouter(prefix="/api/v1/b2b", tags=["b2b-events"])
 
 
 def _verify_service_key(x_service_key: str | None = Header(None, alias="X-Service-Key")) -> None:
@@ -18,8 +18,9 @@ def _verify_service_key(x_service_key: str | None = Header(None, alias="X-Servic
 
 
 @router.post(
-    "/product",
+    "/events",
     response_model=ProductEventResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(_verify_service_key)],
 )
 async def receive_product_event(
