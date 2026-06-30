@@ -16,9 +16,10 @@ from app.dependencies.filters import parse_catalog_filters_query
 from app.models.product import Product, ProductStatus
 from app.schemas.catalog import FacetsResponse, ProductShortListResponse
 from app.schemas.errors import VALID_SORTS, invalid_sort_error
+from app.schemas.product import CatalogProductCard
 from app.services import b2b_client
 from app.services.catalog_service import validate_search_query
-from app.services.product_presenter import product_to_catalog_detail
+from app.services.product_presenter import product_to_catalog_card, product_to_catalog_detail
 
 router = APIRouter(prefix="/api/v1", tags=["Catalog"])
 
@@ -109,3 +110,27 @@ async def get_catalog_product(
         )
 
     return product_to_catalog_detail(product)
+
+
+from app.services.similar_service import get_similar_products  # noqa: E402
+
+
+@router.get(
+    "/catalog/products/{product_id}/similar",
+    response_model=list[CatalogProductCard],
+    summary="Похожие товары (US-CAT-04)",
+)
+async def get_similar_catalog_products(
+    product_id: uuid.UUID,
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+) -> list[CatalogProductCard]:
+    products, _total = await get_similar_products(db, product_id=product_id, limit=limit)
+
+    if products is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "NOT_FOUND", "message": "Product not found"},
+        )
+
+    return [product_to_catalog_card(p) for p in products]
