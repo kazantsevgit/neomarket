@@ -12,6 +12,7 @@ from app.schemas.product import (
     BlockingReasonDetail,
     CatalogCategoryRef,
     CatalogImageRef,
+    CatalogProductCard,
     CatalogProductDetail,
     CatalogSellerRef,
     CatalogSku,
@@ -276,4 +277,37 @@ def product_to_catalog_detail(product: Product) -> CatalogProductDetail:
         description=product.description or "",
         attributes=chars,
         skus=[sku_to_catalog_response(sku) for sku in product.skus],
+    )
+
+
+def product_to_catalog_card(product: Product) -> CatalogProductCard:
+    prices = [sku.price for sku in product.skus] if product.skus else [0]
+    min_price = min(prices)
+    has_stock = any(sku.active_quantity > 0 for sku in product.skus)
+
+    category = None
+    if product.category_id:
+        category = CatalogCategoryRef(
+            id=product.category_id,
+            name="",
+            level=0,
+            path=[],
+        )
+
+    seller = None
+    if product.seller_id:
+        seller = CatalogSellerRef(
+            id=product.seller_id,
+            display_name="",
+        )
+
+    return CatalogProductCard(
+        id=product.id,
+        name=product.title,
+        slug=product.slug,
+        category=category,
+        seller=seller,
+        min_price=min_price,
+        has_stock=has_stock,
+        images=_catalog_product_images(product.images),
     )

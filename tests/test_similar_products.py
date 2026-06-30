@@ -58,6 +58,7 @@ def make_product(
     p = MagicMock(spec=Product)
     p.id = product_id
     p.category_id = category_id
+    p.seller_id = None
     p.status = status
     p.deleted = deleted
     p.title = f"Product {product_id}"
@@ -133,15 +134,14 @@ async def test_similar_returns_up_to_8_from_same_category(override_db):
     override_db.execute.side_effect = [count_result, items_result]
 
     async with await _client() as client:
-        resp = await client.get(f"/api/v1/products/{PRODUCT_ID}/similar")
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}/similar?limit=8")
 
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data["items"]) == 8
-    assert data["total_count"] == 8
+    assert len(data) == 8
 
     # текущий товар не должен быть в результате
-    ids_in_response = {item["id"] for item in data["items"]}
+    ids_in_response = {item["id"] for item in data}
     assert str(PRODUCT_ID) not in ids_in_response
 
 
@@ -171,12 +171,11 @@ async def test_empty_category_returns_200_empty_list(override_db):
     override_db.execute.side_effect = [count_result, items_result]
 
     async with await _client() as client:
-        resp = await client.get(f"/api/v1/products/{PRODUCT_ID}/similar")
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}/similar")
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["items"] == []
-    assert data["total_count"] == 0
+    assert data == []
 
 
 # ─── unhappy: неизвестный товар → 404 ────────────────────────────────────────
@@ -189,7 +188,7 @@ async def test_unknown_product_returns_404(override_db):
 
     unknown_id = uuid.uuid4()
     async with await _client() as client:
-        resp = await client.get(f"/api/v1/products/{unknown_id}/similar")
+        resp = await client.get(f"/api/v1/catalog/products/{unknown_id}/similar")
 
     assert resp.status_code == 404
     assert resp.json()["code"] == "NOT_FOUND"
@@ -225,10 +224,10 @@ async def test_similar_excludes_current_product(override_db):
     override_db.execute.side_effect = [count_result, items_result]
 
     async with await _client() as client:
-        resp = await client.get(f"/api/v1/products/{PRODUCT_ID}/similar")
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}/similar")
 
     assert resp.status_code == 200
-    ids_in_response = {item["id"] for item in resp.json()["items"]}
+    ids_in_response = {item["id"] for item in resp.json()}
     assert str(PRODUCT_ID) not in ids_in_response
 
 
@@ -267,9 +266,9 @@ async def test_similar_fallback_to_parent_category(override_db):
     override_db.execute.side_effect = [c1, r1, c2, r2]
 
     async with await _client() as client:
-        resp = await client.get(f"/api/v1/products/{PRODUCT_ID}/similar?limit=8")
+        resp = await client.get(f"/api/v1/catalog/products/{PRODUCT_ID}/similar?limit=8")
 
     assert resp.status_code == 200
     data = resp.json()
     # Итого 3 товара (1 своих + 2 из родительской)
-    assert len(data["items"]) == 3
+    assert len(data) == 3
